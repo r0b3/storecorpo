@@ -8,7 +8,7 @@
 //
 // El validador se encarga de:
 //   - redirigir al Panel General si no hay sesión SSO válida,
-//   - exigir la cookie de entrada `pg_entry_corpo_store` (acceso solo desde el
+//   - exigir la cookie de entrada `pg_entry_store` (acceso solo desde el
 //     panel; por URL directa devuelve 403),
 //   - resolver el rol local desde `{db}.accesos`.
 //
@@ -16,7 +16,7 @@
 require_once __DIR__ . '/../lib/helpers.php';
 require_once __DIR__ . '/../lib/auth.php';
 
-// Ruta al validador central: la app vive en /var/www/c2206/corpo_store/public,
+// Ruta al validador central: la app vive en /var/www/c2206/store/public,
 // el panel en /var/www/c2206/svc (dos niveles arriba + svc/).
 $__sso_validator = __DIR__ . '/../../svc/src/auth/validador.php';
 if (!is_file($__sso_validator)) {

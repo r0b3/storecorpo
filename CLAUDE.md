@@ -32,7 +32,7 @@ que probar; el acceso real se hace entrando desde el Panel General.
 
 El esquema está en **`db/schema.sql`** (reconstruido del código, para instalación
 limpia): `users`, `categories`, `products`, `product_variants`, `orders`, `order_items`.
-Cargar dentro de la BD de la app: `sudo mysql c0rp0tur1sm0_corpo_store < db/schema.sql`.
+Cargar dentro de la BD de la app: `sudo mysql c0rp0tur1sm0_store < db/schema.sql`.
 
 ## Arquitectura
 
@@ -79,7 +79,7 @@ Archivos huérfanos, no los uses como referencia ni asumas que están activos:
 La app corre en host02 como **plataforma hija del Panel SSO** (`svc`). **No tiene login
 propio**: `public/_gate_private.php` incluye el validador central
 `../../svc/src/auth/validador.php` **en scope global**, que valida la sesión (JWT
-`sso_token`), exige la cookie de entrada `pg_entry_corpo_store` (solo se llega desde el
+`sso_token`), exige la cookie de entrada `pg_entry_store` (solo se llega desde el
 panel; por URL directa devuelve 403) y deja en globales `$usuario_sso`, `$rol_local`,
 `$estado_local`, `$panel_base`.
 

@@ -10,8 +10,8 @@ return [
   'db' => [
     'host'    => '127.0.0.1',
     'port'    => 3306,
-    'name'    => 'c0rp0tur1sm0_corpo_store',
-    'user'    => 'c0rp0tur1sm0_corpo_store',
+    'name'    => 'c0rp0tur1sm0_store',
+    'user'    => 'c0rp0tur1sm0_store',
     'pass'    => 'PON_AQUI_LA_CLAVE_DEL_USUARIO_DE_BD',
     'charset' => 'utf8mb4'
   ],
@@ -19,6 +19,7 @@ return [
   // Declarado pero desactivado: cart.php y checkout.php fuerzan tax = 0.
   'tax_rate' => 0.19,
 
-  // Ruta pública de la plataforma (coincide con url_base en el registro SSO).
-  'base_url' => '/corpo_store',
+  // Servida en la RAÍZ del subdominio store.cartagenadeindias.travel → vacío.
+  // (En el registro SSO, url_base = https://store.cartagenadeindias.travel)
+  'base_url' => '',
 ];
