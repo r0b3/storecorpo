@@ -79,7 +79,7 @@ $ordersT = table_exists($pdo,'orders') ? 'orders' : (table_exists($pdo,'sales') 
 if (!$ordersT) { http_response_code(500); exit('No existe la tabla de órdenes/ventas.'); }
 
 $itemsT  = table_exists($pdo,'order_items') ? 'order_items' : (table_exists($pdo,'sales_items') ? 'sales_items' : null);
-$usersT  = table_exists($pdo,'users') ? 'users' : null;
+$usersT  = table_exists($pdo,'usuarios') ? 'usuarios' : null;
 
 $dateCol = pick_date_col($pdo, $ordersT);
 $hasArtesanas = has_column($pdo,$ordersT,'for_artesanas');
@@ -146,7 +146,7 @@ if (has_column($pdo,$ordersT,'customer_type')) {
 // Por vendedor (usuario)
 $BY_SELLER = [];
 if ($usersT && has_column($pdo,$ordersT,'user_id')) {
-  $sellerExpr = "COALESCE(NULLIF(u.full_name,''), NULLIF(u.username,''), NULLIF(u.email,''), CONCAT('Usuario #', u.id))";
+  $sellerExpr = "COALESCE(NULLIF(TRIM(CONCAT_WS(' ', u.nombre, u.apellido)),''), NULLIF(u.nombre_usuario,''), CONCAT('Usuario #', u.id))";
   $sqlBySeller = "SELECT
       u.id AS uid,
       {$sellerExpr} AS seller,

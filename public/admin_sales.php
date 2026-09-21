@@ -144,12 +144,15 @@ $bt       = trim($_GET['bt']   ?? ''); // tipo de cliente
 $q        = trim($_GET['q']    ?? ''); // texto libre
 $sellerId = isset($_GET['seller_id']) && $_GET['seller_id'] !== '' ? (int)$_GET['seller_id'] : null;
 
-/* ===== Query de órdenes (con JOIN a users si hay user_id) ===== */
+/* ===== Query de órdenes (JOIN al espejo `usuarios` del SSO) ===== */
+// `usuarios` es solo un espejo para resolver nombres; user_id guarda el id SSO.
 $select = "o.*";
 $join   = "";
-if ($hasUserId && table_exists($pdo, 'users')) {
-  $select .= ", u.username AS seller_username, u.full_name AS seller_full_name, u.email AS seller_email, u.id AS seller_id";
-  $join    = " LEFT JOIN users u ON u.id = o.user_id ";
+if ($hasUserId && table_exists($pdo, 'usuarios')) {
+  $select .= ", u.nombre_usuario AS seller_username"
+           . ", TRIM(CONCAT_WS(' ', u.nombre, u.apellido)) AS seller_full_name"
+           . ", u.id AS seller_id";
+  $join    = " LEFT JOIN usuarios u ON u.id = o.user_id ";
 }
 
 $sql = "SELECT {$select} FROM {$ordersT} o {$join} WHERE 1";
@@ -207,10 +210,14 @@ if ($itemsT && $orders) {
   }
 }
 
-/* ===== Vendedores para filtro (solo si hay users y user_id) ===== */
+/* ===== Vendedores para filtro (espejo `usuarios`) ===== */
 $sellers = [];
-if ($hasUserId && table_exists($pdo, 'users')) {
-  $sellers = $pdo->query("SELECT id, COALESCE(NULLIF(TRIM(full_name),''), username, email) AS label FROM users ORDER BY label")->fetchAll(PDO::FETCH_ASSOC);
+if ($hasUserId && table_exists($pdo, 'usuarios')) {
+  $sellers = $pdo->query(
+    "SELECT id, COALESCE(NULLIF(TRIM(CONCAT_WS(' ', nombre, apellido)),''),"
+  . " NULLIF(nombre_usuario,''), CONCAT('Usuario #', id)) AS label"
+  . " FROM usuarios ORDER BY label"
+  )->fetchAll(PDO::FETCH_ASSOC);
 }
 
 /* ===== Render ===== */
@@ -293,8 +300,8 @@ ob_start(); ?>
 
       // Vendedor
       $sellerName = null;
-      if (isset($o['seller_full_name']) || isset($o['seller_username']) || isset($o['seller_email'])) {
-        $sellerName = $o['seller_full_name'] ?: ($o['seller_username'] ?: ($o['seller_email'] ?? null));
+      if (isset($o['seller_full_name']) || isset($o['seller_username'])) {
+        $sellerName = ($o['seller_full_name'] ?: null) ?: ($o['seller_username'] ?? null);
       } elseif (isset($o['user_id'])) {
         $sellerName = 'ID '.$o['user_id'];
       }

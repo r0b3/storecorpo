@@ -81,7 +81,6 @@ if (!empty($_SESSION['cart']) && is_array($_SESSION['cart'])) {
             <a class="nav-link dropdown-toggle" href="#" data-bs-toggle="dropdown" aria-expanded="false">Admin</a>
             <ul class="dropdown-menu dropdown-menu-end">
               <li><a class="dropdown-item" href="<?= url('admin_inventory.php') ?>">Inventario</a></li>
-              <li><a class="dropdown-item" href="<?= url('admin_users.php') ?>">Usuarios</a></li>
             </ul>
           </li>
         </ul>

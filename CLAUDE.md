@@ -31,7 +31,8 @@ que probar; el acceso real se hace entrando desde el Panel General.
 `config/config.example.php` y rellenar solo las credenciales de BD (ya no hay `app_key`).
 
 El esquema está en **`db/schema.sql`** (reconstruido del código, para instalación
-limpia): `users`, `categories`, `products`, `product_variants`, `orders`, `order_items`.
+limpia): `categories`, `products`, `product_variants`, `orders`, `order_items`, y
+`usuarios` (espejo de solo-lectura de los usuarios del SSO, ver abajo).
 Cargar dentro de la BD de la app: `sudo mysql c0rp0tur1sm0_store < db/schema.sql`.
 
 ## Arquitectura
@@ -96,8 +97,27 @@ panel; por URL directa devuelve 403) y deja en globales `$usuario_sso`, `$rol_lo
 `$_SESSION` se usa únicamente para el carrito (`$_SESSION['cart']`) y el flash de orden.
 
 **Dos usuarios de BD distintos:** el SSO lee `{db}.accesos` con el usuario central
-`sso_app` (solo esa tabla); la tienda accede a SUS datos (catálogo, órdenes) con su
-propio usuario de BD vía `get_pdo()`/`config/config.php`.
+`sso_app`; la tienda accede a SUS datos (catálogo, órdenes) con su propio usuario de BD
+vía `get_pdo()`/`config/config.php`.
+
+### La plataforma NO crea usuarios: los referencia
+Quién entra y con qué rol lo define **el Panel General**, no la tienda:
+`svc/public/api/platform_access.php` hace upsert en `{db}.accesos (id, rol, estado)` y,
+best-effort, en `{db}.usuarios (id, nombre_usuario, nombre, apellido, rol,
+contrasena_hash='*SSO*')`. En ambas, **`id` es el id del usuario en el SSO**.
+
+- `accesos` → la lee el validador para `$rol_local`. Es la fuente de autorización.
+- `usuarios` → **solo espejo de nombres**, para mostrar quién registró cada venta.
+  Nunca contiene contraseñas reales (centinela `*SSO*`). No editar a mano: el panel
+  la reescribe.
+- Por eso no existe `admin_users.php` ni tabla `users`: crear usuarios aquí rompería
+  el modelo. Para dar acceso a un empleado se usa el panel.
+- `orders.user_id` guarda el **id del SSO** y **no tiene clave foránea** a `usuarios`:
+  el espejo lo puebla el panel dentro de un `try/catch`, así que un FK haría fallar
+  la venta de alguien cuya fila aún no se replicó. Los nombres salen por `LEFT JOIN`.
+- Ojo, distinta cosa: `EmpleadosSync` (flag `plataformas.sincroniza_empleados`) espeja
+  `sso.empleados` → `{db}.empleados` usando `sso_empleado_id`, **nunca** el id como PK
+  (hubo un incidente por eso). La tienda no usa ese espejo; el flag queda en 0.
 
 ### CSRF: double-submit cookie
 Cookie `STRCSRF` con `path=/` (deliberado: con el path acotado se perdían peticiones en
@@ -114,7 +134,7 @@ Los endpoints **no asumen el esquema**: lo interrogan en caliente con `has_colum
 varios archivos, unos con `SHOW COLUMNS` y otros con `information_schema`). Ejemplos
 reales: la imagen de producto puede llamarse `image|cover|photo|picture|img`; la tabla
 de ventas puede ser `orders` o `sales` (e ítems `order_items` o `sales_items`);
-`orders.for_artesanas`, `products.stock` y `users.active` pueden no existir y el código
+`orders.for_artesanas` y `products.stock` pueden no existir y el código
 ramifica en cada caso.
 
 Al tocar consultas, **mantener ese estilo**: detectar la columna antes de usarla en vez

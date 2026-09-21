@@ -17,19 +17,26 @@
 SET NAMES utf8mb4;
 SET FOREIGN_KEY_CHECKS = 0;
 
--- ---------- Usuarios del portal (personal, no clientes) ----------
-CREATE TABLE IF NOT EXISTS `users` (
-  `id`            INT UNSIGNED NOT NULL AUTO_INCREMENT,
-  `username`      VARCHAR(60)  DEFAULT NULL,
-  `email`         VARCHAR(190) NOT NULL,
-  `full_name`     VARCHAR(150) DEFAULT NULL,
-  `password_hash` VARCHAR(255) NOT NULL,
-  `role`          VARCHAR(30)  NOT NULL DEFAULT 'Seller',   -- Admin | Billing | Seller
-  `active`        TINYINT(1)   NOT NULL DEFAULT 1,
-  `created_at`    TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP,
+-- ---------- Espejo de usuarios del SSO (NO se crean aquí) ----------
+-- La plataforma hija no crea usuarios: los referencia. El Panel SSO
+-- (svc/public/api/platform_access.php) hace upsert aquí al otorgar acceso:
+--   INSERT INTO <db>.usuarios (id, nombre_usuario, nombre, apellido, rol,
+--                              contrasena_hash) VALUES (…, '*SSO*')
+-- `id` es el id del usuario en el SSO (mismo criterio que `accesos.id`), y
+-- `contrasena_hash` es siempre el centinela '*SSO*': aquí nunca hay claves.
+-- Esta tabla solo sirve para resolver NOMBRES (quién registró cada venta).
+-- Las columnas que el panel no escribe deben admitir NULL o tener default,
+-- o el upsert falla en silencio (va dentro de un try/catch en el panel).
+CREATE TABLE IF NOT EXISTS `usuarios` (
+  `id`              INT(11)      NOT NULL,
+  `nombre_usuario`  VARCHAR(50)  NOT NULL,
+  `contrasena_hash` VARCHAR(255) NOT NULL DEFAULT '*SSO*',
+  `rol`             VARCHAR(50)  DEFAULT NULL,
+  `nombre`          VARCHAR(50)  DEFAULT NULL,
+  `apellido`        VARCHAR(50)  DEFAULT NULL,
+  `cargo`           VARCHAR(50)  DEFAULT NULL,
   PRIMARY KEY (`id`),
-  UNIQUE KEY `uq_users_email` (`email`),
-  UNIQUE KEY `uq_users_username` (`username`)
+  UNIQUE KEY `uq_usuarios_nombre_usuario` (`nombre_usuario`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- ---------- Categorías ----------
@@ -81,7 +88,7 @@ CREATE TABLE IF NOT EXISTS `product_variants` (
 -- ---------- Órdenes / ventas ----------
 CREATE TABLE IF NOT EXISTS `orders` (
   `id`               INT UNSIGNED NOT NULL AUTO_INCREMENT,
-  `user_id`          INT UNSIGNED DEFAULT NULL,   -- vendedor que registró la venta
+  `user_id`          INT(11)      DEFAULT NULL,   -- id del usuario SSO que registró la venta
   `customer_type`    ENUM('natural','empresa') NOT NULL DEFAULT 'natural',
   `company_name`     VARCHAR(180) DEFAULT NULL,
   `company_nit`      VARCHAR(40)  DEFAULT NULL,
@@ -103,9 +110,11 @@ CREATE TABLE IF NOT EXISTS `orders` (
   PRIMARY KEY (`id`),
   KEY `ix_orders_user` (`user_id`),
   KEY `ix_orders_status` (`status`),
-  KEY `ix_orders_created` (`created_at`),
-  CONSTRAINT `fk_orders_user` FOREIGN KEY (`user_id`)
-      REFERENCES `users` (`id`) ON DELETE SET NULL
+  KEY `ix_orders_created` (`created_at`)
+  -- SIN clave foránea a `usuarios` a propósito: el espejo lo puebla el panel
+  -- en modo best-effort (try/catch). Si alguien tiene acceso pero su fila aún
+  -- no se replicó, un FK haría fallar la venta entera. `user_id` guarda el id
+  -- del SSO y los nombres se resuelven con LEFT JOIN.
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- ---------- Líneas de orden ----------
