@@ -23,16 +23,16 @@ php -S localhost:8000            # ejecutar en el padre de str/
 # → http://localhost:8000/str/public/index.php
 ```
 
-Si se sirve `public/` como docroot, hay que cambiar `base_url` a `''` — de lo contrario
-todos los enlaces y, sobre todo, el `path` del cookie de autenticación quedan mal y el
-login entra en bucle.
+**En host02 la app depende del SSO** (`svc`, carpeta hermana): fuera de esa estructura
+`_gate_private.php` corta con 500 ("Validador SSO no disponible"). No hay login local
+que probar; el acceso real se hace entrando desde el Panel General.
 
 `config/config.php` **no está versionado** (`.gitignore`): partir de
-`config/config.example.php` y rellenar credenciales, `base_url` y `app_key`.
+`config/config.example.php` y rellenar solo las credenciales de BD (ya no hay `app_key`).
 
-Se requiere una base MySQL ya creada con las tablas `users`,
-`categories`, `products`, `product_variants`, `orders`, `order_items`. **No existe
-esquema SQL ni migraciones en el repo**; el esquema vive solo en el servidor.
+El esquema está en **`db/schema.sql`** (reconstruido del código, para instalación
+limpia): `users`, `categories`, `products`, `product_variants`, `orders`, `order_items`.
+Cargar dentro de la BD de la app: `sudo mysql c0rp0tur1sm0_corpo_store < db/schema.sql`.
 
 ## Arquitectura
 
@@ -71,28 +71,33 @@ render('Título', __DIR__ . '/../views/pages/_blank.php', ['content'=>$content, 
 si se omite, el menú de categorías sale vacío sin error.
 
 Archivos huérfanos, no los uses como referencia ni asumas que están activos:
-`views/header.php`, `views/footer.php` (sustituidos por `views/partials/`),
-`views/pages/home.php` (el catálogo se arma inline en `public/index.php`) y
-`public/acceso.php` (login duplicado de `login.php`).
+`views/header.php`, `views/footer.php` (sustituidos por `views/partials/`) y
+`views/pages/home.php` (el catálogo se arma inline en `public/index.php`).
+`login.php`, `logout.php` y `acceso.php` se eliminaron al pasar al SSO.
 
-### Autenticación: cookie firmada, no sesión
-`lib/auth.php` implementa login *stateless*: el cookie `STRAUTH` lleva
-`base64url(json).base64url(HMAC-SHA256)` firmado con `app_key` de la config, con
-expiración de 8 h y renovación automática cuando quedan menos de 30 min. **Los datos de
-usuario y el rol viven dentro del cookie**, no se releen de BD en cada request: cambiar
-el rol de alguien en `admin_users.php` no surte efecto hasta que vuelva a iniciar
-sesión. El `path` del cookie es exactamente `base_url()`.
+### Autenticación: delegada al SSO central (Panel General)
+La app corre en host02 como **plataforma hija del Panel SSO** (`svc`). **No tiene login
+propio**: `public/_gate_private.php` incluye el validador central
+`../../svc/src/auth/validador.php` **en scope global**, que valida la sesión (JWT
+`sso_token`), exige la cookie de entrada `pg_entry_corpo_store` (solo se llega desde el
+panel; por URL directa devuelve 403) y deja en globales `$usuario_sso`, `$rol_local`,
+`$estado_local`, `$panel_base`.
 
-`$_SESSION` se usa únicamente para el carrito (`$_SESSION['cart']`) y el flash de orden
-(`last_order_id`, `last_order_total`).
+`lib/auth.php` es solo un **adaptador** sobre esas globales:
+- `auth_user()` construye `['id','username','role',…]` desde `$usuario_sso`.
+- `sso_map_role()` traduce el rol del SSO a los de la tienda: admin global → `Admin`;
+  `$rol_local` (de `{db}.accesos`) se mapea con sinónimos a `Admin`/`Billing`/`Seller`;
+  cualquier rol local activo no reconocido cae a `Seller`.
+- `require_roles(['Admin','Billing'])` compara el rol mapeado (sinónimos en español,
+  incl. `empleado`→seller). `require_login()` solo verifica; el validador ya redirige.
+- No hay `app_key`, ni cookie firmada, ni `auth_login()`. `logout` y "Panel" apuntan a
+  URLs del panel central (`sso_logout_url()`, `sso_panel_url()`).
 
-`require_roles()` acepta sinónimos en español: `['Admin']` también deja pasar a
-`administrador`; `Seller` cubre `vendedor`/`staff`; `Billing` cubre
-`facturador`/`facturación`. Comparación en minúsculas.
+`$_SESSION` se usa únicamente para el carrito (`$_SESSION['cart']`) y el flash de orden.
 
-`public/_gate_private.php` exige login en todo archivo que lo incluya salvo
-`login.php`/`logout.php`. **No protege por sí solo**: hay endpoints en `public/` que no
-lo incluyen (ver "Deuda" abajo).
+**Dos usuarios de BD distintos:** el SSO lee `{db}.accesos` con el usuario central
+`sso_app` (solo esa tabla); la tienda accede a SUS datos (catálogo, órdenes) con su
+propio usuario de BD vía `get_pdo()`/`config/config.php`.
 
 ### CSRF: double-submit cookie
 Cookie `STRCSRF` con `path=/` (deliberado: con el path acotado se perdían peticiones en
@@ -155,14 +160,12 @@ este stand — no "arreglarlo" reconectando `tax_rate` sin confirmarlo con el us
 
 ## Deuda conocida (no introducir más, y avisar si se toca)
 
-- En la instalación de producción, `app_key` sigue siendo el **placeholder de ejemplo**:
-  quien lo conozca puede firmar un cookie `STRAUTH` con rol Admin. Cualquier trabajo
-  sobre auth debería empezar por rotar esa clave (y las credenciales de MySQL, que
-  estuvieron en el árbol de trabajo antes de ignorarse).
-- Endpoints de depuración presentes en el servidor pero **fuera del repo**
-  (`.gitignore`), sin `_gate_private.php`: `test.php` (`phpinfo()`), `whoami.php`,
-  `check_session.php`, `test_after_login.php` y `create_admin.php` (con correo y
-  contraseña en claro; su propio comentario dice que debe borrarse tras usarse).
-  Deberían borrarse también del hosting.
-- Todos los endpoints activan `display_errors=1`, y varios `catch` imprimen
-  `$e->getMessage()` al usuario.
+- Varios `catch` imprimen `$e->getMessage()` al usuario (p. ej. checkout, cart). El
+  validador SSO fuerza `display_errors=0`, así que la fuga queda acotada, pero conviene
+  reemplazar esos mensajes por texto genérico + `error_log`.
+- Si en el árbol de trabajo quedó un `config/config.php` viejo (de la etapa con login
+  local), no contiene ya secretos usados por la app, pero revísalo antes de subir.
+- Endpoints de depuración que pudieran seguir en el servidor de la etapa anterior
+  (`test.php` con `phpinfo()`, `whoami.php`, `check_session.php`, `test_after_login.php`,
+  `create_admin.php`): están fuera del repo (`.gitignore`) y deberían borrarse del
+  hosting — ya no aplican con auth por SSO.

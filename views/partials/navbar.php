@@ -87,13 +87,12 @@ if (!empty($_SESSION['cart']) && is_array($_SESSION['cart'])) {
         </ul>
       <?php endif; ?>
 
-      <!-- Usuario / Login + Carrito con badge -->
+      <!-- Usuario (SSO) + volver al panel + salir central + carrito -->
       <div class="ms-3 d-flex align-items-center gap-2">
         <?php if ($u): ?>
-          <span class="text-white-50 small d-none d-md-inline">Hola, <?= e($u['username'] ?? $u['email'] ?? 'Usuario') ?></span>
-          <a class="btn btn-outline-light btn-sm" href="<?= url('logout.php') ?>">Salir</a>
-        <?php else: ?>
-          <a class="btn btn-outline-light btn-sm" href="<?= url('login.php') ?>">Ingresar</a>
+          <span class="text-white-50 small d-none d-md-inline">Hola, <?= e($u['username'] ?? 'Usuario') ?></span>
+          <a class="btn btn-outline-light btn-sm" href="<?= e(sso_panel_url()) ?>/index.php">Panel</a>
+          <a class="btn btn-outline-light btn-sm" href="<?= e(sso_logout_url()) ?>">Salir</a>
         <?php endif; ?>
 
         <a class="btn btn-outline-light position-relative" href="<?= url('cart.php') ?>" aria-label="Ver carrito">

@@ -1,7 +1,8 @@
 # Credenciales reales: copiar config/config.example.php a config/config.php
 config/config.php
 
-# Scripts de depuración / bootstrap con datos sensibles — nunca versionar
+# Scripts de depuración / bootstrap con datos sensibles — nunca versionar.
+# create_admin.php ya no aplica (auth por SSO), pero puede seguir en el server.
 public/create_admin.php
 public/test.php
 public/whoami.php

@@ -1,26 +1,24 @@
 <?php
 // Plantilla de configuración. Copiar a config/config.php y rellenar.
 // config/config.php está en .gitignore: nunca se versiona.
+//
+// La autenticación la maneja el SSO central (ver lib/auth.php), así que aquí
+// NO hay app_key ni nada de login: solo la conexión a la BD de DATOS de la
+// tienda (catálogo, variantes, órdenes). El usuario de BD es propio de la
+// plataforma, con permisos solo sobre su base (patrón host02).
 return [
   'db' => [
-    'host'    => 'localhost',
+    'host'    => '127.0.0.1',
     'port'    => 3306,
-    'name'    => 'nombre_de_la_base',
-    'user'    => 'usuario',
-    'pass'    => 'contraseña',
+    'name'    => 'c0rp0tur1sm0_corpo_store',
+    'user'    => 'c0rp0tur1sm0_corpo_store',
+    'pass'    => 'PON_AQUI_LA_CLAVE_DEL_USUARIO_DE_BD',
     'charset' => 'utf8mb4'
   ],
 
   // Declarado pero desactivado: cart.php y checkout.php fuerzan tax = 0.
   'tax_rate' => 0.19,
 
-  // Ruta pública de la app. Debe coincidir con el path del cookie de sesión.
-  // Si public/ es el docroot, usar '' (cadena vacía).
-  'base_url' => '/str/public',
-
-  // 🔐 Clave que firma el cookie de autenticación (HMAC-SHA256).
-  // Generar una cadena aleatoria larga (32–64+ chars), p. ej.:
-  //   php -r "echo bin2hex(random_bytes(32));"
-  // Quien la conozca puede falsificar una sesión con rol Admin.
-  'app_key' => 'GENERAR_UNA_CADENA_ALEATORIA_LARGA_Y_UNICA'
+  // Ruta pública de la plataforma (coincide con url_base en el registro SSO).
+  'base_url' => '/corpo_store',
 ];
