@@ -17,16 +17,11 @@ $urole = strtolower($u['role'] ?? '');
        escala a cualquier densidad y pesa ~1 KB. -->
   <link rel="icon" type="image/svg+xml" href="<?= url('favicon.svg') ?>">
   <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
-<style>
-  .brand-logo {
-    max-height: 32px;   /* ajusta a tu gusto: 28–40px */
-    width: auto;
-    object-fit: contain;
-  }
-  @media (max-width: 576px){
-    .brand-logo { max-height: 28px; }
-  }
-</style>
+  <!-- Vidrio de la tienda: reglas propias sobre los tokens --gl-* del SSO. -->
+  <link href="<?= url('assets/tienda.css') ?>" rel="stylesheet">
+  <!-- Tokens publicados por el diseñador de Estilos del panel. Va DESPUÉS de
+       tienda.css a propósito: lo publicado pisa los valores por defecto. -->
+  <style><?= sso_tema_css('store') ?></style>
   <?php
   // helpers.php ya fue cargado ANTES de renderizar la vista (por index/product)
   // así que csrf_token() está disponible y el cookie ya existe.
@@ -75,4 +70,4 @@ $urole = strtolower($u['role'] ?? '');
 </script>
 
 </head>
-<body class="bg-light">
+<body>

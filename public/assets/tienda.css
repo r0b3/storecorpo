@@ -1,0 +1,197 @@
+/* Vidrio de la Tienda — adaptación del lenguaje del SSO a este marcado.
+
+   El panel publica SOLO los tokens --gl-* por plataforma; las reglas las trae
+   cada hija (a las hijas no se les envía glass-estructura.css: sus reglas
+   genéricas peleaban con las de la app — incidente inv/bde del 2026-09-16).
+   Aquí están las reglas equivalentes, escritas contra los componentes que la
+   tienda usa de verdad: catálogo, variantes, carrito, tablas de ventas.
+
+   Los valores de :root son los DEFAULTS del catálogo del panel, para que la
+   tienda se vea bien antes de que el super-admin active su tema. El CSS
+   publicado se inyecta DESPUÉS de este archivo, así que en cuanto se publique
+   manda él, sin tocar nada aquí. */
+
+:root {
+    --gl-blur:      3px;
+    --gl-blur-menu: 2px;
+    --gl-tinte:     255, 255, 255;
+    --gl-op:        0.41;
+    --gl-op-menu:   0.00;
+    --gl-op-modal:  0.75;
+    --gl-tenue:     #515C6D;
+    --gl-tinte-nav: 44, 62, 80;
+    --gl-op-nav:    0.70;
+    --gl-base:      #F4F6F9;
+    --gl-mancha-a:  52, 152, 219;
+    --gl-mancha-b:  44, 62, 80;
+    --gl-fondo-a:   0.27;
+    --gl-fondo-b:   0.35;
+
+    /* Borde y sombra no están en el catálogo del panel: fijos, como allí. */
+    --gl-borde:  rgba(255, 255, 255, .65);
+    --gl-sombra: 0 12px 36px rgba(0, 0, 0, .16);
+}
+
+[data-bs-theme="dark"] {
+    --gl-borde: rgba(255, 255, 255, .16);
+}
+
+/* ============================================================
+   Fondo de marca
+   ============================================================
+   Pseudo-elemento fijo, no background-attachment: fixed — iOS Safari lo
+   ignora y, junto a backdrop-filter, fuerza repintados del área completa. */
+body {
+    background-color: var(--gl-base) !important;
+}
+body::before {
+    content: "";
+    position: fixed;
+    inset: 0;
+    z-index: -1;
+    pointer-events: none;
+    background:
+        radial-gradient(60% 55% at 12% 8%,
+            rgba(var(--gl-mancha-a), var(--gl-fondo-a)), transparent 62%),
+        radial-gradient(55% 55% at 88% 94%,
+            rgba(var(--gl-mancha-b), var(--gl-fondo-b)), transparent 62%);
+}
+
+/* ============================================================
+   Superficies de vidrio
+   ============================================================ */
+.card,
+.alert,
+.toast {
+    background-color: rgba(var(--gl-tinte), var(--gl-op)) !important;
+    -webkit-backdrop-filter: blur(var(--gl-blur)) saturate(170%);
+    backdrop-filter: blur(var(--gl-blur)) saturate(170%);
+    border: 1px solid var(--gl-borde);
+    box-shadow: var(--gl-sombra);
+}
+
+/* Las partes de la card comparten el vidrio del contenedor: dos capas
+   translúcidas apiladas se ven sucias. Incluye .toast-header y los
+   list-group de variantes, que en el catálogo van dentro de la card. */
+.card-header,
+.card-body,
+.card-footer,
+.toast-header,
+.list-group-flush,
+.list-group-flush > .list-group-item {
+    background-color: transparent !important;
+}
+
+/* La línea entre variantes sustituye al fondo alterno, que sobre vidrio
+   deja de leerse. */
+.list-group-flush > .list-group-item {
+    border-color: var(--gl-borde);
+}
+
+/* La tabla vive dentro de una card que ya pone el vidrio; si pintara su
+   propio fondo lo taparía. */
+.table {
+    --bs-table-bg: transparent;
+    --bs-table-striped-bg: transparent;
+    --bs-table-accent-bg: transparent;
+}
+
+/* Modales: el .modal-backdrop de Bootstrap ya oscurece el fondo, así que
+   aquí el tinte es mayor para que el texto tenue no pierda contraste.
+   Mismo criterio para el desplegable del navbar, que se abre sobre
+   contenido: con --gl-op-menu (0 por defecto) sería ilegible. */
+.modal-content,
+.dropdown-menu {
+    background-color: rgba(var(--gl-tinte), var(--gl-op-modal)) !important;
+    -webkit-backdrop-filter: blur(var(--gl-blur)) saturate(170%);
+    backdrop-filter: blur(var(--gl-blur)) saturate(170%);
+    border: 1px solid var(--gl-borde);
+}
+
+/* Campos y selects. La lista que despliega un <select> la dibuja el sistema
+   operativo y CSS no la alcanza: esto solo afecta a la caja. */
+.form-control,
+.form-select {
+    background-color: rgba(var(--gl-tinte), var(--gl-op-menu));
+    -webkit-backdrop-filter: blur(var(--gl-blur-menu));
+    backdrop-filter: blur(var(--gl-blur-menu));
+}
+
+.text-muted {
+    color: var(--gl-tenue) !important;
+}
+
+/* Lienzos opacos: el fondo translúcido les resta definición. */
+canvas {
+    background-color: var(--gl-base);
+}
+
+/* ============================================================
+   La navbar
+   ============================================================
+   `bg-dark` de Bootstrap lleva !important, así que pisarlo exige !important
+   también; y un gradiente es background-image y se pinta ENCIMA del
+   background-color, de ahí el background-image: none. */
+.navbar,
+.navbar.bg-dark {
+    background-image: none !important;
+    background-color: rgba(var(--gl-tinte-nav), var(--gl-op-nav)) !important;
+    -webkit-backdrop-filter: blur(var(--gl-blur)) saturate(170%);
+    backdrop-filter: blur(var(--gl-blur)) saturate(170%);
+    border-bottom: 1px solid var(--gl-borde);
+    box-shadow: var(--gl-sombra);
+}
+
+/* El pie repite el vidrio de las superficies en vez de su blanco sólido. */
+footer.bg-white {
+    background-color: rgba(var(--gl-tinte), var(--gl-op)) !important;
+    -webkit-backdrop-filter: blur(var(--gl-blur)) saturate(170%);
+    backdrop-filter: blur(var(--gl-blur)) saturate(170%);
+    border-top: 1px solid var(--gl-borde);
+}
+
+/* La imagen del producto queda sobre el vidrio de su card. */
+.card-img-top {
+    background-color: rgba(var(--gl-tinte), var(--gl-op));
+}
+
+.brand-logo {
+    max-height: 32px;
+    width: auto;
+    object-fit: contain;
+}
+@media (max-width: 576px) {
+    .brand-logo { max-height: 28px; }
+}
+
+/* ============================================================
+   Degradación
+   ============================================================
+   Sin desenfoque se cae a fondo SÓLIDO, no a un translúcido sin desenfocar:
+   eso último es justo lo que se ve mal. El gradiente del fondo se queda en
+   ambos casos, no depende del blur. */
+@supports not (backdrop-filter: blur(1px)) {
+    .card, .navbar, .alert, .toast, .modal-content, .dropdown-menu,
+    footer.bg-white {
+        background-color: var(--gl-base) !important;
+    }
+    .form-control, .form-select {
+        background-color: var(--gl-base);
+    }
+}
+
+/* Quien pide menos transparencia en su sistema suele tener un motivo médico:
+   el efecto se desactiva entero, no se atenúa. */
+@media (prefers-reduced-transparency: reduce) {
+    .card, .navbar, .alert, .toast, .modal-content, .dropdown-menu,
+    footer.bg-white {
+        background-color: var(--gl-base) !important;
+        -webkit-backdrop-filter: none;
+        backdrop-filter: none;
+    }
+    .form-control, .form-select {
+        background-color: var(--gl-base);
+        -webkit-backdrop-filter: none;
+        backdrop-filter: none;
+    }
+}

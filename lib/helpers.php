@@ -153,6 +153,43 @@ if (PHP_SAPI !== 'cli') {
 }
 
 /* =========================================================
+ *  Tema del SSO (diseñador de estilos del panel)
+ * =======================================================*/
+/**
+ * CSS publicado por el diseñador de Estilos del Panel General para esta
+ * plataforma. Son SOLO las variables --gl-* (tokens de vidrio): las reglas
+ * las trae la tienda en assets/tienda.css, porque el panel documenta que a
+ * las hijas no se les envía glass-estructura.css (sus reglas genéricas
+ * peleaban con las de la app; incidente inv/bde del 2026-09-16).
+ *
+ * Se inyecta DESPUÉS de tienda.css para que lo publicado pise los valores
+ * por defecto. Si la plataforma aún no tiene tema activo, el archivo es solo
+ * un comentario y mandan los defaults de la tienda.
+ */
+if (!function_exists('sso_tema_css')) {
+  function sso_tema_css(string $codigo = 'store'): string {
+    $ruta = null;
+    // La ruta la resuelve el propio panel si está disponible: así seguimos
+    // moviéndonos con él si cambia el directorio.
+    $clase = '/var/www/c2206/svc/src/services/TemaArchivos.php';
+    if (is_file($clase)) {
+      try {
+        require_once $clase;
+        if (class_exists('TemaArchivos')) {
+          $ruta = TemaArchivos::ruta(TemaArchivos::dir(), $codigo);
+        }
+      } catch (Throwable $e) {
+        $ruta = null;
+      }
+    }
+    $ruta = $ruta ?: ('/var/www/c2206/_sso-tema/' . $codigo . '.css');
+    if (!is_file($ruta) || !is_readable($ruta)) return '';
+    $css = @file_get_contents($ruta);
+    return is_string($css) ? $css : '';
+  }
+}
+
+/* =========================================================
  *  Destino de redirección seguro (?next=…)
  * =======================================================*/
 /**
