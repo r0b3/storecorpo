@@ -5,10 +5,13 @@ error_reporting(E_ALL);
 
 require_once __DIR__ . '/../lib/helpers.php';
 require_once __DIR__ . '/../lib/auth.php';
-require_login();
-require_roles(['Admin']); // restringe a Admin
 require_once __DIR__ . '/../views/main.php';
-require __DIR__ . '/_gate_private.php'; // ← añade esta línea
+// La puerta SSO va ANTES de cualquier verificación: es la que ejecuta el
+// validador central y deja $usuario_sso en scope. Si se invierte el orden,
+// require_login() no ve usuario y devuelve 403 aunque seas Admin.
+require_once __DIR__ . '/_gate_private.php';
+
+require_roles(['Admin']); // restringe a Admin
 
 
 $pdo = get_pdo();

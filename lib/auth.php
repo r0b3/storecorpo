@@ -60,6 +60,14 @@ function sso_logout_url(): string {
  * llega aquí sin usuario, se corta. No hace login: solo verifica.
  */
 function require_login(): void {
+  // Si la puerta no corrió, esto NO es un problema de permisos: es que la
+  // página no incluyó _gate_private.php antes de verificar. Fallar con
+  // "Acceso denegado" ahí manda a depurar roles en vez del orden de includes.
+  if (!defined('SSO_GATE_OK')) {
+    error_log('[auth] require_login() sin _gate_private.php previo en ' . ($_SERVER['SCRIPT_NAME'] ?? '?'));
+    http_response_code(500);
+    exit('Error de configuración: la puerta SSO no se cargó antes de verificar el acceso.');
+  }
   if (!auth_user()) {
     http_response_code(403);
     exit('Acceso denegado');

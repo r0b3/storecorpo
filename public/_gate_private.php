@@ -25,4 +25,8 @@ if (!is_file($__sso_validator)) {
 }
 require $__sso_validator;
 
+// Marca que la puerta SSO ya se ejecutó en esta petición. auth.php lo usa para
+// distinguir "no hay sesión" de "la página olvidó incluir esta puerta".
+define('SSO_GATE_OK', true);
+
 require_login();
