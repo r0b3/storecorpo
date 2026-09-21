@@ -1,0 +1,15 @@
+# Credenciales reales: copiar config/config.example.php a config/config.php
+config/config.php
+
+# Scripts de depuración / bootstrap con datos sensibles — nunca versionar
+public/create_admin.php
+public/test.php
+public/whoami.php
+public/check_session.php
+public/test_after_login.php
+
+# Sistema
+.DS_Store
+Thumbs.db
+desktop.ini
+*.log

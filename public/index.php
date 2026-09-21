@@ -1,0 +1,300 @@
+<?php
+// public/index.php — Catálogo con filtro por categorías y controles +/– por variante
+ini_set('display_errors','1'); ini_set('display_startup_errors','1'); ini_set('log_errors','1'); error_reporting(E_ALL);
+
+require_once __DIR__ . '/../lib/helpers.php';
+require_once __DIR__ . '/../lib/auth.php';
+require_once __DIR__ . '/../views/main.php';
+require_once __DIR__ . '/_gate_private.php'; // portal privado
+
+$pdo = get_pdo();
+
+/* ===== Helpers locales ===== */
+function has_column(PDO $pdo, string $table, string $column): bool {
+  $st = $pdo->prepare("SHOW COLUMNS FROM {$table} LIKE :c");
+  $st->execute([':c'=>$column]);
+  return (bool)$st->fetch();
+}
+function first_existing_column(PDO $pdo, string $table, array $cols): ?string {
+  foreach ($cols as $c) if (has_column($pdo, $table, $c)) return $c;
+  return null;
+}
+function product_image_col(PDO $pdo): ?string {
+  return first_existing_column($pdo, 'products', ['image','cover','photo','picture','img']);
+}
+
+/* ===== Filtros ===== */
+$q   = trim($_GET['q']   ?? '');
+$cat = trim($_GET['cat'] ?? '');
+
+/* ===== Carga de productos con categoría (por slug) ===== */
+$imgCol = product_image_col($pdo);
+$imgSQL = $imgCol ? ", p.{$imgCol} AS image" : "";
+
+$sql = "SELECT p.id, p.name, p.description, p.base_price{$imgSQL},
+               c.name AS category, c.slug AS category_slug
+        FROM products p
+        LEFT JOIN categories c ON c.id = p.category_id
+        WHERE 1=1";
+$args = [];
+
+if ($q !== '') {
+  $sql .= " AND (p.name LIKE :q OR p.description LIKE :q)";
+  $args[':q'] = "%{$q}%";
+}
+if ($cat !== '') {
+  $sql .= " AND c.slug = :cat";
+  $args[':cat'] = $cat;
+}
+
+$sql .= " ORDER BY p.created_at DESC, p.id DESC";
+$st = $pdo->prepare($sql);
+$st->execute($args);
+$products = $st->fetchAll(PDO::FETCH_ASSOC);
+
+/* ===== Variantes activas por producto ===== */
+$variantsByProduct = [];
+if ($products) {
+  $ids = array_column($products, 'id');
+  $in  = implode(',', array_fill(0, count($ids), '?'));
+  $sqlV = "SELECT v.*
+           FROM product_variants v
+           WHERE v.product_id IN ($in)
+             AND (v.active = 1 OR v.active IS NULL)
+           ORDER BY v.product_id, v.id";
+  $sv = $pdo->prepare($sqlV);
+  $sv->execute($ids);
+  foreach ($sv->fetchAll(PDO::FETCH_ASSOC) as $v) {
+    $variantsByProduct[(int)$v['product_id']][] = $v;
+  }
+}
+
+/* ===== Categorías (para el selector) ===== */
+$cats = $pdo->query("SELECT name, slug FROM categories ORDER BY name")->fetchAll(PDO::FETCH_ASSOC);
+
+/* ===== Render ===== */
+ob_start(); ?>
+
+<div class="d-flex align-items-center mb-3">
+  <h4 class="mb-0">Catálogo</h4>
+
+  <!-- Buscador -->
+  <form class="ms-auto d-flex" method="get" action="<?= url('index.php') ?>">
+    <?php if ($cat !== ''): ?>
+      <input type="hidden" name="cat" value="<?= e($cat) ?>">
+    <?php endif; ?>
+    <input class="form-control me-2" type="search" placeholder="Buscar" name="q" value="<?= e($q) ?>">
+    <button class="btn btn-outline-secondary" type="submit">Buscar</button>
+  </form>
+</div>
+
+<!-- Filtro de categorías (píldoras) -->
+<div class="mb-3">
+  <div class="d-flex flex-wrap gap-2 align-items-center">
+    <a class="btn btn-sm <?= $cat==='' ? 'btn-primary' : 'btn-outline-secondary' ?>"
+       href="<?= url('index.php') . ($q!=='' ? ('?q=' . urlencode($q)) : '') ?>">
+      Todas
+    </a>
+    <?php foreach ($cats as $c): 
+      $isActive = ($cat === (string)$c['slug']);
+      // reconstruye query manteniendo 'q'
+      $href = url('index.php') . '?cat=' . urlencode($c['slug']) . ($q!=='' ? '&q=' . urlencode($q) : '');
+    ?>
+      <a class="btn btn-sm <?= $isActive ? 'btn-primary' : 'btn-outline-secondary' ?>" href="<?= $href ?>">
+        <?= e($c['name']) ?>
+      </a>
+    <?php endforeach; ?>
+
+    <?php if ($cat !== '' || $q !== ''): ?>
+      <a class="btn btn-sm btn-outline-dark ms-auto" href="<?= url('index.php') ?>">Limpiar filtros</a>
+    <?php endif; ?>
+  </div>
+</div>
+
+<?php if (!$products): ?>
+  <div class="alert alert-info">No hay productos que coincidan con los filtros.</div>
+<?php endif; ?>
+
+<div class="row g-3">
+<?php foreach ($products as $p):
+  $pid   = (int)$p['id'];
+  $img   = $p['image'] ?? 'placeholder.png';
+  $desc  = (string)($p['description'] ?? '');
+  $vlist = $variantsByProduct[$pid] ?? [];
+?>
+  <div class="col-12 col-md-6 col-lg-4">
+    <div class="card h-100 shadow-sm">
+      <img src="<?= url('uploads/' . $img) ?>" class="card-img-top"
+           onerror="this.src='<?= url('uploads/placeholder.png') ?>'">
+      <div class="card-body d-flex flex-column">
+        <h5 class="card-title mb-1"><?= e($p['name']) ?></h5>
+        <?php if (!empty($p['category'])): ?>
+          <div class="mb-1"><span class="badge bg-light text-dark"><?= e($p['category']) ?></span></div>
+        <?php endif; ?>
+        <div class="text-muted small mb-2">
+          <?= e($desc !== '' ? mb_strimwidth($desc,0,120,'…','UTF-8') : '') ?>
+        </div>
+
+        <?php if (empty($vlist)): ?>
+          <!-- Sin variantes: precio base -->
+          <div class="border rounded p-2 d-flex align-items-center justify-content-between mb-2">
+            <div>
+              <div class="small text-muted">Precio</div>
+              <div class="fw-semibold">$<?= money($p['base_price']) ?></div>
+            </div>
+            <div class="d-flex align-items-center gap-1">
+              <button class="btn btn-sm btn-outline-secondary btn-qty" data-target="#q_<?= $pid ?>_0" data-delta="-1" type="button">–</button>
+              <input id="q_<?= $pid ?>_0" class="form-control form-control-sm text-center" style="width:60px"
+                     type="number" min="1" value="1">
+              <button class="btn btn-sm btn-outline-secondary btn-qty" data-target="#q_<?= $pid ?>_0" data-delta="+1" type="button">+</button>
+              <button class="btn btn-sm btn-primary ms-1 btn-add"
+                      data-pid="<?= $pid ?>" data-vid=""
+                      data-qref="#q_<?= $pid ?>_0" type="button">Agregar</button>
+            </div>
+          </div>
+        <?php else: ?>
+          <!-- Con variantes: lista con controles -->
+          <div class="small text-muted mb-1">Variantes</div>
+          <div class="list-group list-group-flush">
+            <?php foreach ($vlist as $v):
+              $vid = (int)$v['id'];
+              $o1n = trim((string)($v['option1_name'] ?? ''));
+              $o1v = trim((string)($v['option1_value'] ?? ''));
+              $o2n = trim((string)($v['option2_name'] ?? ''));
+              $o2v = trim((string)($v['option2_value'] ?? ''));
+              $labelParts = [];
+              if ($o1n !== '' || $o1v !== '') $labelParts[] = ($o1n!==''?$o1n.': ':'').($o1v!==''?$o1v:'');
+              if ($o2n !== '' || $o2v !== '') $labelParts[] = ($o2n!==''?$o2n.': ':'').($o2v!==''?$o2v:'');
+              $label = implode(' / ', array_filter($labelParts, fn($x)=>trim($x) !== ''));
+              $price = $v['price'] !== null ? (float)$v['price'] : (float)$p['base_price'];
+              $stock = isset($v['stock']) ? (int)$v['stock'] : null;
+            ?>
+              <div class="list-group-item d-flex align-items-center justify-content-between">
+                <div class="me-2">
+                  <div class="fw-semibold"><?= e($label ?: 'Variante') ?></div>
+                  <div class="small text-muted">
+                    $<?= money($price) ?><?= ($stock!==null?' · Stock: '.(int)$stock:'') ?>
+                  </div>
+                </div>
+                <div class="d-flex align-items-center gap-1">
+                  <button class="btn btn-sm btn-outline-secondary btn-qty"
+                          data-target="#q_<?= $pid ?>_<?= $vid ?>" data-delta="-1" type="button">–</button>
+                  <input id="q_<?= $pid ?>_<?= $vid ?>" class="form-control form-control-sm text-center"
+                         style="width:60px" type="number" min="1" value="1"
+                         <?= ($stock!==null && $stock>0) ? 'max="'.$stock.'"' : '' ?>>
+                  <button class="btn btn-sm btn-outline-secondary btn-qty"
+                          data-target="#q_<?= $pid ?>_<?= $vid ?>" data-delta="+1" type="button">+</button>
+                  <button class="btn btn-sm btn-primary ms-1 btn-add"
+                          data-pid="<?= $pid ?>" data-vid="<?= $vid ?>"
+                          data-qref="#q_<?= $pid ?>_<?= $vid ?>" type="button">Agregar</button>
+                </div>
+              </div>
+            <?php endforeach; ?>
+          </div>
+        <?php endif; ?>
+
+        <div class="mt-auto"></div>
+      </div>
+    </div>
+  </div>
+<?php endforeach; ?>
+</div>
+
+<!-- Toast de confirmación -->
+<div class="position-fixed bottom-0 end-0 p-3" style="z-index:1080">
+  <div id="cartToast" class="toast" role="status" aria-live="polite" aria-atomic="true">
+    <div class="toast-header">
+      <strong class="me-auto">Carrito</strong>
+      <small>Ahora</small>
+      <button type="button" class="btn-close" data-bs-dismiss="toast" aria-label="Cerrar"></button>
+    </div>
+    <div class="toast-body">Producto agregado.</div>
+  </div>
+</div>
+
+<script>
+// Botones +/- para inputs
+document.addEventListener('click', function (ev) {
+  const b = ev.target.closest('.btn-qty');
+  if (!b) return;
+  const target = b.getAttribute('data-target');
+  const delta  = b.getAttribute('data-delta') === '-1' ? -1 : 1;
+  const input  = document.querySelector(target);
+  if (!input) return;
+
+  const min = parseInt(input.getAttribute('min') || '1', 10);
+  const maxAttr = input.getAttribute('max');
+  const max = maxAttr ? parseInt(maxAttr, 10) : Infinity;
+
+  let val = parseInt(input.value || '1', 10);
+  if (isNaN(val)) val = 1;
+  val = Math.min(max, Math.max(min, val + delta));
+  input.value = String(val);
+});
+
+// Agregar al carrito (AJAX)
+document.addEventListener('click', async function (ev) {
+  const btn = ev.target.closest('.btn-add');
+  if (!btn) return;
+
+  const pid  = parseInt(btn.getAttribute('data-pid') || '0', 10);
+  const vidS = btn.getAttribute('data-vid') || '';
+  const vid  = vidS === '' ? '' : parseInt(vidS, 10);
+  const qref = btn.getAttribute('data-qref') || '';
+  const inp  = qref ? document.querySelector(qref) : null;
+  const qty  = Math.max(1, parseInt(inp?.value || '1', 10));
+
+  try {
+    const res = await window.csrfFetch('<?= url('cart.php') ?>', {
+  method: 'POST',
+  headers: { 'Accept': 'application/json' },
+  body: {
+    action: 'add',
+    product_id: String(pid),
+    variant_id: vid === '' ? '' : String(vid),
+    qty: String(qty),
+    ajax: '1',                 // ← fuerza respuesta JSON aunque el server no “detecte” AJAX
+  }
+});
+
+
+    let data = null;
+    const ct = (res.headers.get('Content-Type') || '').toLowerCase();
+    if (ct.includes('application/json')) {
+      data = await res.json();
+    } else {
+      // Fallback PRG si tu cart.php no devuelve JSON
+      location.href = '<?= url('cart.php') ?>';
+      return;
+    }
+
+    if (!res.ok || !data?.ok) {
+      throw new Error(data?.message || 'No se pudo agregar al carrito');
+    }
+
+    // Actualiza badge del carrito
+    const badge = document.getElementById('cartBadge');
+    if (badge && typeof data.items !== 'undefined') {
+      badge.textContent = String(data.items);
+    }
+
+    // Muestra toast
+    const toastEl = document.getElementById('cartToast');
+    if (toastEl) {
+      toastEl.querySelector('.toast-body').textContent = data.message || 'Producto agregado.';
+      const toast = new bootstrap.Toast(toastEl);
+      toast.show();
+    }
+
+  } catch (err) {
+    console.error(err);
+    alert(err.message || 'Error al agregar al carrito.');
+  }
+});
+</script>
+<?php
+$content = ob_get_clean();
+render('Tienda - Inicio', __DIR__ . '/../views/pages/_blank.php', [
+  'content' => $content,
+  'cats'    => $cats,
+]);
