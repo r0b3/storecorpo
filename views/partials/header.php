@@ -13,6 +13,9 @@ $urole = strtolower($u['role'] ?? '');
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title><?= isset($title)?htmlspecialchars($title, ENT_QUOTES, 'UTF-8'):'Tienda Stand 2025' ?></title>
+  <!-- Mismo glifo que la tarjeta del panel (bi-shop) en alto contraste. SVG:
+       escala a cualquier densidad y pesa ~1 KB. -->
+  <link rel="icon" type="image/svg+xml" href="<?= url('favicon.svg') ?>">
   <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
 <style>
   .brand-logo {
