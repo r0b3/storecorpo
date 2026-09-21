@@ -165,6 +165,66 @@ footer.bg-white {
 }
 
 /* ============================================================
+   Navbar fija
+   ============================================================
+   Con sticky-top (no fixed-top) la barra sigue ocupando su hueco en el flujo:
+   no hay que compensar con padding en el body ni se solapa con el contenido
+   al cargar. El vidrio se apoya en que el contenido pase por debajo. */
+.navbar.sticky-top {
+    z-index: 1030;
+}
+
+/* Si el menú desplegado en móvil es más alto que la pantalla, la barra fija
+   lo dejaría inalcanzable: se le da scroll propio. */
+@media (max-width: 991.98px) {
+    .navbar.sticky-top .navbar-collapse {
+        max-height: calc(100vh - 4.5rem);
+        overflow-y: auto;
+    }
+    /* Los ms-3 están pensados para la fila horizontal de escritorio; apilados
+       en vertical dejan una sangría que descuadra. */
+    #topNav .ms-3 { margin-left: 0 !important; }
+    #topNav form[role="search"] { margin-top: .5rem; }
+    #topNav > .d-flex {
+        flex-wrap: wrap;
+        row-gap: .5rem;
+        margin-top: .5rem;
+    }
+}
+
+/* ============================================================
+   Catálogo en móvil
+   ============================================================ */
+.qty-input { width: 60px; }
+
+@media (max-width: 575.98px) {
+    /* El bloque de cantidad baja a su propia línea en vez de comprimir la
+       etiqueta de la variante hasta partirla letra a letra. */
+    .linea-compra { flex-wrap: wrap; row-gap: .5rem; }
+    .linea-compra > * { min-width: 0; }
+    .qty-group { width: 100%; justify-content: flex-end; }
+    .qty-group .btn-add { flex: 1 1 auto; }   /* "Agregar" ocupa lo que sobre */
+
+    /* Objetivo táctil mínimo cómodo para +/- y el campo. */
+    .qty-group .btn-qty { min-width: 2.25rem; }
+    .qty-input { width: 4rem; }
+}
+
+/* Los filtros de categoría son muchos: en móvil se desplazan en horizontal
+   en vez de crecer hacia abajo y empujar el catálogo fuera de la vista. */
+@media (max-width: 575.98px) {
+    .filtros-cat {
+        flex-wrap: nowrap;
+        overflow-x: auto;
+        -webkit-overflow-scrolling: touch;
+        scrollbar-width: none;
+        padding-bottom: .25rem;
+    }
+    .filtros-cat::-webkit-scrollbar { display: none; }
+    .filtros-cat > .btn { flex: 0 0 auto; }
+}
+
+/* ============================================================
    Degradación
    ============================================================
    Sin desenfoque se cae a fondo SÓLIDO, no a un translúcido sin desenfocar:

@@ -19,7 +19,7 @@ if (!empty($_SESSION['cart']) && is_array($_SESSION['cart'])) {
   foreach ($_SESSION['cart'] as $ci) { $cartCount += (int)($ci['qty'] ?? 0); }
 }
 ?>
-<nav class="navbar navbar-expand-lg navbar-dark bg-dark mb-4">
+<nav class="navbar navbar-expand-lg navbar-dark bg-dark mb-4 sticky-top">
   <div class="container">
 
     <!-- Logo + nombre -->

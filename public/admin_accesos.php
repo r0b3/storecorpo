@@ -172,7 +172,7 @@ ob_start(); ?>
             <div class="small text-muted"><?= e($u['usuario']) ?><?= $uid === (int)$yo['id'] ? ' · tú' : '' ?></div>
           </td>
           <td>
-            <form method="post" class="d-flex gap-2 align-items-center">
+            <form method="post" class="d-flex gap-2 align-items-center flex-wrap">
               <?= csrf_field() ?>
               <input type="hidden" name="accion" value="conceder">
               <input type="hidden" name="usuario_id" value="<?= $uid ?>">

@@ -89,7 +89,7 @@ ob_start(); ?>
 
 <!-- Filtro de categorías (píldoras) -->
 <div class="mb-3">
-  <div class="d-flex flex-wrap gap-2 align-items-center">
+  <div class="d-flex flex-wrap gap-2 align-items-center filtros-cat">
     <a class="btn btn-sm <?= $cat==='' ? 'btn-primary' : 'btn-outline-secondary' ?>"
        href="<?= url('index.php') . ($q!=='' ? ('?q=' . urlencode($q)) : '') ?>">
       Todas
@@ -136,14 +136,14 @@ ob_start(); ?>
 
         <?php if (empty($vlist)): ?>
           <!-- Sin variantes: precio base -->
-          <div class="border rounded p-2 d-flex align-items-center justify-content-between mb-2">
+          <div class="border rounded p-2 d-flex align-items-center justify-content-between mb-2 linea-compra">
             <div>
               <div class="small text-muted">Precio</div>
               <div class="fw-semibold">$<?= money($p['base_price']) ?></div>
             </div>
-            <div class="d-flex align-items-center gap-1">
+            <div class="d-flex align-items-center gap-1 qty-group">
               <button class="btn btn-sm btn-outline-secondary btn-qty" data-target="#q_<?= $pid ?>_0" data-delta="-1" type="button">–</button>
-              <input id="q_<?= $pid ?>_0" class="form-control form-control-sm text-center" style="width:60px"
+              <input id="q_<?= $pid ?>_0" class="form-control form-control-sm text-center qty-input"
                      type="number" min="1" value="1">
               <button class="btn btn-sm btn-outline-secondary btn-qty" data-target="#q_<?= $pid ?>_0" data-delta="+1" type="button">+</button>
               <button class="btn btn-sm btn-primary ms-1 btn-add"
@@ -168,18 +168,17 @@ ob_start(); ?>
               $price = $v['price'] !== null ? (float)$v['price'] : (float)$p['base_price'];
               $stock = isset($v['stock']) ? (int)$v['stock'] : null;
             ?>
-              <div class="list-group-item d-flex align-items-center justify-content-between">
+              <div class="list-group-item d-flex align-items-center justify-content-between linea-compra">
                 <div class="me-2">
                   <div class="fw-semibold"><?= e($label ?: 'Variante') ?></div>
                   <div class="small text-muted">
                     $<?= money($price) ?><?= ($stock!==null?' · Stock: '.(int)$stock:'') ?>
                   </div>
                 </div>
-                <div class="d-flex align-items-center gap-1">
+                <div class="d-flex align-items-center gap-1 qty-group">
                   <button class="btn btn-sm btn-outline-secondary btn-qty"
                           data-target="#q_<?= $pid ?>_<?= $vid ?>" data-delta="-1" type="button">–</button>
-                  <input id="q_<?= $pid ?>_<?= $vid ?>" class="form-control form-control-sm text-center"
-                         style="width:60px" type="number" min="1" value="1"
+                  <input id="q_<?= $pid ?>_<?= $vid ?>" class="form-control form-control-sm text-center qty-input" type="number" min="1" value="1"
                          <?= ($stock!==null && $stock>0) ? 'max="'.$stock.'"' : '' ?>>
                   <button class="btn btn-sm btn-outline-secondary btn-qty"
                           data-target="#q_<?= $pid ?>_<?= $vid ?>" data-delta="+1" type="button">+</button>
