@@ -56,6 +56,49 @@ function sso_logout_url(): string {
 }
 
 /**
+ * Refresca el espejo local `usuarios` con la identidad que trae el SSO.
+ *
+ * NO crea usuarios: copia la referencia (id del SSO, usuario, nombre, apellido)
+ * para poder mostrar QUIÉN registró cada venta. El panel también lo hace, pero
+ * solo por una de sus rutas (platform_access.php); si el acceso se concedió por
+ * manage_access.php el espejo queda vacío y las ventas saldrían como
+ * "Usuario #N". Por eso la tienda se auto-repara al entrar.
+ *
+ * Nunca debe romper la página: cualquier fallo se registra y se sigue.
+ */
+function sso_sync_local_user(): void {
+  global $usuario_sso, $sso_pdo, $rol_local;
+  if (empty($usuario_sso['id']) || !($sso_pdo instanceof PDO)) return;
+  $id = (int)$usuario_sso['id'];
+  try {
+    $pdo = get_pdo();
+    $st = $pdo->prepare("SELECT 1 FROM usuarios WHERE id = ?");
+    $st->execute([$id]);
+    if ($st->fetchColumn()) return; // ya espejado
+
+    $s = $sso_pdo->prepare("SELECT usuario, nombre, apellido FROM usuarios WHERE id = ?");
+    $s->execute([$id]);
+    $u = $s->fetch();
+    if (!$u) return;
+
+    // `rol` es VARCHAR(50): el validador puede dejar textos largos como
+    // "Super Administrador (Global)" cuando el admin no tiene fila local.
+    $rol = trim((string)($rol_local ?? ''));
+    if ($rol === '' || strlen($rol) > 50 || str_contains($rol, ' ')) {
+      $rol = (string)($usuario_sso['rol'] ?? 'empleado');
+    }
+
+    $pdo->prepare(
+      "INSERT INTO usuarios (id, nombre_usuario, contrasena_hash, rol, nombre, apellido)
+       VALUES (?, ?, '*SSO*', ?, ?, ?)
+       ON DUPLICATE KEY UPDATE nombre=VALUES(nombre), apellido=VALUES(apellido), rol=VALUES(rol)"
+    )->execute([$id, $u['usuario'], $rol, $u['nombre'], $u['apellido']]);
+  } catch (Throwable $e) {
+    error_log('[sso_sync_local_user] ' . $e->getMessage());
+  }
+}
+
+/**
  * El validador ya redirige al panel si no hay sesión válida; si aun así se
  * llega aquí sin usuario, se corta. No hace login: solo verifica.
  */

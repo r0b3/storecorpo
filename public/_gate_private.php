@@ -30,3 +30,7 @@ require $__sso_validator;
 define('SSO_GATE_OK', true);
 
 require_login();
+
+// Espeja la identidad del SSO en `usuarios` (solo si falta) para resolver
+// nombres en Ventas sin depender de qué ruta del panel concedió el acceso.
+sso_sync_local_user();
