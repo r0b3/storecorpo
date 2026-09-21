@@ -31,6 +31,47 @@ function slugify(string $txt): string {
   $s = trim($s, '-');
   return $s ?: 'item';
 }
+/**
+ * Resuelve category_id del POST. Si se eligió "nueva", crea la categoría al
+ * vuelo con el nombre escrito: así no hay que salir del formulario del
+ * producto para dar de alta una categoría.
+ *
+ * Es find-or-create, no create a secas: si ya existe una con el mismo slug se
+ * reutiliza, para no acabar con "Gorras" y "gorras" como categorías distintas.
+ * Respeta que la tabla pueda no tener columna `slug` (mismo criterio
+ * defensivo que el resto del archivo).
+ */
+function resolver_categoria(PDO $pdo): ?int {
+  $elegida = $_POST['category_id'] ?? '';
+
+  if ($elegida !== '__nueva__') {
+    return $elegida === '' ? null : (int)$elegida;
+  }
+
+  $nombre = trim($_POST['category_nueva'] ?? '');
+  if ($nombre === '') {
+    throw new RuntimeException('Escribe el nombre de la categoría nueva.');
+  }
+
+  $tieneSlug = has_column($pdo, 'categories', 'slug');
+  if (!$tieneSlug) {
+    $st = $pdo->prepare("SELECT id FROM categories WHERE name = :n LIMIT 1");
+    $st->execute([':n' => $nombre]);
+    if ($id = $st->fetchColumn()) return (int)$id;
+    $pdo->prepare("INSERT INTO categories (name) VALUES (:n)")->execute([':n' => $nombre]);
+    return (int)$pdo->lastInsertId();
+  }
+
+  $slug = slugify($nombre);
+  $st = $pdo->prepare("SELECT id FROM categories WHERE slug = :s LIMIT 1");
+  $st->execute([':s' => $slug]);
+  if ($id = $st->fetchColumn()) return (int)$id;
+
+  $pdo->prepare("INSERT INTO categories (name, slug) VALUES (:n, :s)")
+      ->execute([':n' => $nombre, ':s' => $slug]);
+  return (int)$pdo->lastInsertId();
+}
+
 function unique_slug(PDO $pdo, string $base): string {
   $slug = $base; $i = 1;
   $st = $pdo->prepare("SELECT COUNT(*) FROM products WHERE slug = :s");
@@ -55,7 +96,7 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
   $name  = trim($_POST['name'] ?? '');
   $desc  = trim($_POST['description'] ?? '');
   $price = (float)($_POST['base_price'] ?? 0);
-  $cat   = ($_POST['category_id'] ?? '') === '' ? null : (int)$_POST['category_id'];
+  $cat   = resolver_categoria($pdo);
 
   if ($name === '') throw new RuntimeException('El nombre es obligatorio.');
   if ($price < 0)   throw new RuntimeException('El precio base no puede ser negativo.');
@@ -105,7 +146,7 @@ elseif ($action === 'update_product') {
   $name  = trim($_POST['name'] ?? '');
   $desc  = trim($_POST['description'] ?? '');
   $price = (float)($_POST['base_price'] ?? 0);
-  $cat   = ($_POST['category_id'] ?? '') === '' ? null : (int)$_POST['category_id'];
+  $cat   = resolver_categoria($pdo);
 
   if ($id <= 0)     throw new RuntimeException('ID de producto inválido.');
   if ($name === '') throw new RuntimeException('El nombre es obligatorio.');
@@ -385,12 +426,16 @@ if ($msg !== '') {
             
             <div class="col-md-6">
               <label class="form-label">Categoría</label>
-              <select class="form-select" name="category_id">
+              <select class="form-select select-cat" name="category_id">
                 <option value="">(Ninguna)</option>
                 <?php foreach ($cats as $c): ?>
                   <option value="<?= (int)$c['id'] ?>"><?= e($c['name']) ?></option>
                 <?php endforeach; ?>
+                <option value="__nueva__">+ Nueva categoría…</option>
               </select>
+              <input type="text" class="form-control mt-2 d-none input-cat-nueva"
+                     name="category_nueva" maxlength="120"
+                     placeholder="Nombre de la categoría nueva">
             </div>
             <div class="col-12">
               <label class="form-label">Descripción</label>
@@ -436,12 +481,16 @@ if ($msg !== '') {
             </div>
             <div class="col-md-6">
               <label class="form-label">Categoría</label>
-              <select class="form-select" name="category_id" id="edit_cat">
+              <select class="form-select select-cat" name="category_id" id="edit_cat">
                 <option value="">(Ninguna)</option>
                 <?php foreach ($cats as $c): ?>
                   <option value="<?= (int)$c['id'] ?>"><?= e($c['name']) ?></option>
                 <?php endforeach; ?>
+                <option value="__nueva__">+ Nueva categoría…</option>
               </select>
+              <input type="text" class="form-control mt-2 d-none input-cat-nueva"
+                     name="category_nueva" maxlength="120"
+                     placeholder="Nombre de la categoría nueva">
             </div>
             <div class="col-12">
               <label class="form-label">Descripción</label>
@@ -695,6 +744,21 @@ delModal.addEventListener('show.bs.modal', function (ev) {
   document.getElementById('del_id').value = b.getAttribute('data-pid');
   document.getElementById('del_name').textContent = b.getAttribute('data-name') || '';
 });
+
+// "+ Nueva categoría…": revela el campo de texto y lo hace obligatorio solo
+// mientras está visible. Delegado en document para que valga también para el
+// select del modal de edición, que se rellena por JS al abrirlo.
+document.addEventListener('change', function (ev) {
+  const sel = ev.target.closest('.select-cat');
+  if (!sel) return;
+  const campo = sel.parentElement.querySelector('.input-cat-nueva');
+  if (!campo) return;
+  const nueva = sel.value === '__nueva__';
+  campo.classList.toggle('d-none', !nueva);
+  campo.required = nueva;
+  if (nueva) { campo.focus(); } else { campo.value = ''; }
+});
+
 </script>
 <?php
 $content = ob_get_clean();
