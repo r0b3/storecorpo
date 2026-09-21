@@ -8,6 +8,11 @@ require_once __DIR__ . '/../lib/db.php';
 require_once __DIR__ . '/../views/main.php';
 require_once __DIR__ . '/_gate_private.php';
 
+// Autorización ANTES de cualquier manejador POST. El de anulación de ventas
+// (action=reverse) se procesa más abajo, así que un rol sin permiso (Seller)
+// llegaba a anular órdenes y restituir stock si el chequeo quedaba después.
+require_roles(['Admin','Billing']);
+
 /* ====== Helpers locales ====== */
 function table_exists(PDO $pdo, string $name): bool {
   $st = $pdo->prepare("SELECT 1 FROM information_schema.TABLES WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = :t LIMIT 1");
@@ -108,8 +113,7 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST' && ($_POST['action'] ?? '')
 }
 /* === /Reversión de venta =========================================== */
 
-// Solo Admin y Billing (Facturación)
-require_roles(['Admin','Billing']);
+// (El control de rol Admin/Billing se hace arriba, antes del manejador POST.)
 
 $pdo = get_pdo();
 

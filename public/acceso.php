@@ -13,10 +13,7 @@ if ($_SERVER['REQUEST_METHOD']==='POST') {
   $pass  = (string)($_POST['password'] ?? '');
   if ($email && $pass) {
     if (auth_login($email, $pass)) {
-      $next = $_GET['next'] ?? url('index.php');
-      if (strpos($next, base_url()) !== 0) { $next = url('index.php'); }
-      header("Location: " . $next);
-      exit;
+      redirect(safe_next($_GET['next'] ?? null));
     } else {
       $err = "Credenciales inválidas";
     }

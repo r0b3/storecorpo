@@ -153,6 +153,26 @@ if (PHP_SAPI !== 'cli') {
 }
 
 /* =========================================================
+ *  Destino de redirección seguro (?next=…)
+ * =======================================================*/
+/**
+ * redirect() acepta URLs absolutas tal cual, así que un ?next= sin validar
+ * es un open redirect (phishing desde la propia pantalla de login).
+ * Solo admitimos rutas relativas al sitio: nada de http://externo ni de
+ * //externo (protocol-relative), ni /\externo, que algunos navegadores
+ * interpretan igual que //.
+ */
+if (!function_exists('safe_next')) {
+  function safe_next($next, ?string $fallback = null): string {
+    $fallback = $fallback ?? url('index.php');
+    if (!is_string($next) || $next === '')          return $fallback;
+    if ($next[0] !== '/')                            return $fallback;
+    if (isset($next[1]) && ($next[1] === '/' || $next[1] === '\\')) return $fallback;
+    return $next;
+  }
+}
+
+/* =========================================================
  *  Redirect robusto (con fallback si headers ya salieron)
  * =======================================================*/
 /* Redirect robusto (sin duplicar /str/public) */

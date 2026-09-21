@@ -8,8 +8,7 @@ require_once __DIR__ . '/../views/main.php';
 
 // Si ya está logeado, manda a inicio (o next)
 if (auth_user()) {
-  $next = $_GET['next'] ?? url('index.php');
-  redirect($next);
+  redirect(safe_next($_GET['next'] ?? null));
 }
 
 $err = '';
@@ -19,7 +18,7 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
 
   $user = trim($_POST['user'] ?? '');
   $pass = (string)($_POST['pass'] ?? '');
-  $next = $_POST['next'] ?? url('index.php');
+  $next = safe_next($_POST['next'] ?? null);
 
   if ($user === '' || $pass === '') {
     $err = 'Usuario/Email y contraseña son obligatorios.';
@@ -43,7 +42,7 @@ ob_start(); ?>
         <?php endif; ?>
         <form method="post" action="<?= url('login.php') ?>">
           <?= csrf_field() ?>
-          <input type="hidden" name="next" value="<?= e($_GET['next'] ?? url('index.php')) ?>">
+          <input type="hidden" name="next" value="<?= e(safe_next($_GET['next'] ?? null)) ?>">
           <div class="mb-3">
             <label class="form-label">Usuario o Email</label>
             <input class="form-control" name="user" autocomplete="username" required>
