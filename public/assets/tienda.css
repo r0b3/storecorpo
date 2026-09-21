@@ -142,6 +142,31 @@ canvas {
     box-shadow: var(--gl-sombra);
 }
 
+/* El buscador vive DENTRO de la navbar oscura, y ahí el token --gl-op-menu
+   (0.00 por defecto en el catálogo del panel) deja el campo totalmente
+   transparente con su texto negro heredado de Bootstrap: ilegible sobre el
+   tinte oscuro. En el panel no ocurre porque allí los campos van sobre
+   tarjetas claras. Este caso es propio de la tienda, así que el campo del
+   navbar lleva su propio vidrio claro y texto claro, independiente del token.
+   El tinte del navbar es oscuro en ambos temas (#2C3E50 / #1A2332), de modo
+   que el blanco sigue siendo el par correcto si el diseñador lo cambia. */
+.navbar .form-control,
+.navbar .form-select {
+    background-color: rgba(255, 255, 255, .14);
+    border-color: var(--gl-borde);
+    color: #fff;
+}
+.navbar .form-control::placeholder {
+    color: rgba(255, 255, 255, .7);
+}
+.navbar .form-control:focus,
+.navbar .form-select:focus {
+    background-color: rgba(255, 255, 255, .22);
+    border-color: rgba(255, 255, 255, .5);
+    color: #fff;
+    box-shadow: none;
+}
+
 /* El pie repite el vidrio de las superficies en vez de su blanco sólido. */
 footer.bg-white {
     background-color: rgba(var(--gl-tinte), var(--gl-op)) !important;
