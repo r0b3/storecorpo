@@ -26,10 +26,15 @@ function has_column(PDO $pdo, string $table, string $column): bool {
   return (bool)$st->fetch();
 }
 function slugify(string $txt): string {
-  $s = iconv('UTF-8','ASCII//TRANSLIT',$txt);
-  $s = strtolower(preg_replace('~[^a-z0-9]+~','-',$s));
+  // El orden importa: hay que bajar a minúsculas ANTES de filtrar. Al revés,
+  // toda mayúscula cae fuera de [a-z0-9] y se vuelve guion — "Gorras" daba
+  // "orras", y un nombre todo en mayúsculas se quedaba sin letras ("item").
+  $s = iconv('UTF-8', 'ASCII//TRANSLIT', $txt);
+  if ($s === false) { $s = $txt; }        // sin transliteración, mejor el original
+  $s = strtolower($s);
+  $s = preg_replace('~[^a-z0-9]+~', '-', $s);
   $s = trim($s, '-');
-  return $s ?: 'item';
+  return $s !== '' ? $s : 'item';
 }
 /**
  * Resuelve category_id del POST. Si se eligió "nueva", crea la categoría al
