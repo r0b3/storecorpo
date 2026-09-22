@@ -35,6 +35,50 @@ function pick(array $row, array $cands, $default=null) {
   return $default;
 }
 
+/* === Marcar venta como pagada (POST) ================================ */
+// El rol ya está exigido arriba (Admin/Billing) antes de cualquier manejador.
+if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST' && ($_POST['action'] ?? '') === 'mark_paid') {
+  ensure_csrf();
+  $oid = (int)($_POST['order_id'] ?? 0);
+  if ($oid <= 0) { redirect('admin_sales.php?ok=0&msg=' . urlencode('ID de venta inválido')); }
+
+  $pdo = get_pdo();
+  $ordersT = table_exists($pdo,'orders') ? 'orders' : (table_exists($pdo,'sales') ? 'sales' : null);
+  if (!$ordersT) { redirect('admin_sales.php?ok=0&msg=' . urlencode('No existe la tabla de ventas.')); }
+
+  try {
+    $pdo->beginTransaction();
+
+    $st = $pdo->prepare("SELECT id, status FROM {$ordersT} WHERE id=:id FOR UPDATE");
+    $st->execute([':id'=>$oid]);
+    $order = $st->fetch(PDO::FETCH_ASSOC);
+    if (!$order) { throw new RuntimeException('Venta no encontrada.'); }
+
+    $estado = strtolower((string)$order['status']);
+    // Una venta anulada no se cobra: habría que reactivarla primero, y eso es
+    // otra decisión (el stock ya se devolvió).
+    if ($estado === 'cancelled') { throw new RuntimeException('La venta está anulada: no se puede marcar como pagada.'); }
+    if ($estado === 'paid')      { throw new RuntimeException('Esa venta ya estaba pagada.'); }
+
+    $u   = function_exists('auth_user') ? auth_user() : null;
+    $uid = $u['id'] ?? null;
+
+    $set = "status='paid'";
+    $params = [':id'=>$oid];
+    if (has_column($pdo, $ordersT, 'paid_at')) { $set .= ", paid_at = NOW()"; }
+    if (has_column($pdo, $ordersT, 'paid_by') && $uid) { $set .= ", paid_by = :uid"; $params[':uid'] = $uid; }
+    $pdo->prepare("UPDATE {$ordersT} SET {$set} WHERE id = :id")->execute($params);
+
+    $pdo->commit();
+    redirect('admin_sales.php?ok=1&msg=' . urlencode('Venta marcada como pagada.'));
+  } catch (Throwable $e) {
+    if ($pdo->inTransaction()) $pdo->rollBack();
+    error_log('[mark_paid] ' . $e->getMessage());
+    redirect('admin_sales.php?ok=0&msg=' . urlencode($e->getMessage()));
+  }
+}
+/* === /Marcar como pagada =========================================== */
+
 /* === Reversión de venta (POST) ====================================== */
 if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST' && ($_POST['action'] ?? '') === 'reverse') {
   ensure_csrf();
@@ -424,6 +468,16 @@ ob_start(); ?>
                   data-copy="<?= e("Venta #{$oid} | Fecha: ".($fecha?:'—')." | Cliente: ".($empresa ?: $nombre ?: '—')." | Total: $".money($total)." | Método: {$pmeth}".($sellerName ? " | Vendedor: {$sellerName}" : "")) ?>">
             Copiar datos
           </button>
+
+          <?php if ($s === 'pending'): ?>
+            <form class="d-inline" method="post" action="<?= url('admin_sales.php') ?>"
+                  onsubmit="return confirm('¿Confirmas que esta venta ya fue cobrada?');">
+              <?= csrf_field() ?>
+              <input type="hidden" name="action" value="mark_paid">
+              <input type="hidden" name="order_id" value="<?= (int)$oid ?>">
+              <button class="btn btn-outline-success btn-sm" type="submit">Marcar como pagada</button>
+            </form>
+          <?php endif; ?>
 
           <?php if ($status !== 'cancelled'): ?>
             <form class="d-inline" method="post" action="<?= url('admin_sales.php') ?>"

@@ -206,10 +206,18 @@ if ($hasForArtesanas) {
       }
     }
 
-    // Marca pagado si el método es efectivo (puedes ajustarlo a tu flujo)
-    // Si prefieres manual: deja siempre pending
-    if ($pm === 'efectivo') {
-      $pdo->prepare("UPDATE orders SET status='paid' WHERE id=:id")->execute([':id'=>$order_id]);
+    // Efectivo y transferencia quedan cobradas en el acto: el vendedor no
+    // entrega sin ver el efectivo o la transferencia confirmada en el celular.
+    // 'por_pagar' es, por definición, lo único que nace pendiente; se salda
+    // después con "Marcar como pagada" en Ventas.
+    if (in_array($pm, ['efectivo', 'transferencia'], true)) {
+      $setPaid = "status='paid'";
+      $argsPaid = [':id' => $order_id];
+      if (has_column($pdo, 'orders', 'paid_at')) { $setPaid .= ", paid_at = NOW()"; }
+      if (has_column($pdo, 'orders', 'paid_by') && $user_id) {
+        $setPaid .= ", paid_by = :uid"; $argsPaid[':uid'] = $user_id;
+      }
+      $pdo->prepare("UPDATE orders SET {$setPaid} WHERE id=:id")->execute($argsPaid);
     }
 
     $pdo->commit();

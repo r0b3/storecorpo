@@ -117,6 +117,8 @@ CREATE TABLE IF NOT EXISTS `orders` (
   `created_at`       TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP,
   `cancelled_at`     DATETIME     DEFAULT NULL,
   `cancelled_by`     INT UNSIGNED DEFAULT NULL,
+  `paid_at`          DATETIME     DEFAULT NULL,   -- cuándo se dio por cobrada
+  `paid_by`          INT(11)      DEFAULT NULL,   -- id del usuario SSO que la cobró
   PRIMARY KEY (`id`),
   KEY `ix_orders_user` (`user_id`),
   KEY `ix_orders_status` (`status`),
