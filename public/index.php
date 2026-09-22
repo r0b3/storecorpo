@@ -62,16 +62,25 @@ if ($cat !== '') {
   $sql .= $hasParent ? " AND (c.slug = :cat OR padre.slug = :cat)" : " AND c.slug = :cat";
   $args[':cat'] = $cat;
 }
-$i = 0;
-foreach ($opt as $nombre => $valor) {
-  $i++;
-  $pn = ":on{$i}"; $pv = ":ov{$i}";
+if ($opt) {
+  // UN SOLO EXISTS con todas las condiciones dentro: los filtros deben
+  // cumplirse en LA MISMA variante. Con un EXISTS por filtro, una camiseta
+  // con (M, Rojo) y (L, Azul) colaba al pedir "M + Azul" aunque esa
+  // combinación no exista. Pedir talla M y color azul significa que exista
+  // la variante M-azul, que es la que se puede vender.
+  $cond = [];
+  $i = 0;
+  foreach ($opt as $nombre => $valor) {
+    $i++;
+    $pn = ":on{$i}"; $pv = ":ov{$i}";
+    $cond[] = "((v.option1_name = {$pn} AND v.option1_value = {$pv})
+             OR (v.option2_name = {$pn} AND v.option2_value = {$pv}))";
+    $args[$pn] = $nombre; $args[$pv] = $valor;
+  }
   $sql .= " AND EXISTS (SELECT 1 FROM product_variants v
                          WHERE v.product_id = p.id
                            AND (v.active = 1 OR v.active IS NULL)
-                           AND ((v.option1_name = {$pn} AND v.option1_value = {$pv})
-                             OR (v.option2_name = {$pn} AND v.option2_value = {$pv})))";
-  $args[$pn] = $nombre; $args[$pv] = $valor;
+                           AND " . implode(" AND ", $cond) . ")";
 }
 
 $sql .= " ORDER BY p.created_at DESC, p.id DESC";
