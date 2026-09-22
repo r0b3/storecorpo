@@ -72,9 +72,53 @@ function resolver_categoria(PDO $pdo): ?int {
   $st->execute([':s' => $slug]);
   if ($id = $st->fetchColumn()) return (int)$id;
 
+  // Padre opcional. Solo se admite UN nivel: si el padre elegido ya es hija
+  // de otra, se cuelga del abuelo en vez de crear un tercer nivel.
+  $padre = null;
+  if (has_column($pdo, 'categories', 'parent_id')) {
+    $pedido = (int)($_POST['category_padre'] ?? 0);
+    if ($pedido > 0) {
+      $q = $pdo->prepare("SELECT id, parent_id FROM categories WHERE id = :id");
+      $q->execute([':id' => $pedido]);
+      if ($fila = $q->fetch()) {
+        $padre = $fila['parent_id'] !== null ? (int)$fila['parent_id'] : (int)$fila['id'];
+      }
+    }
+    $pdo->prepare("INSERT INTO categories (name, slug, parent_id) VALUES (:n, :s, :p)")
+        ->execute([':n' => $nombre, ':s' => $slug, ':p' => $padre]);
+    return (int)$pdo->lastInsertId();
+  }
+
   $pdo->prepare("INSERT INTO categories (name, slug) VALUES (:n, :s)")
       ->execute([':n' => $nombre, ':s' => $slug]);
   return (int)$pdo->lastInsertId();
+}
+
+/**
+ * Ordena las categorías como árbol de UN nivel: cada padre seguido de sus
+ * hijas. Devuelve cada fila con 'depth' (0 padre, 1 hija) para indentar.
+ * Las hijas cuyo padre ya no existe se muestran como principales, para que
+ * nunca desaparezcan del selector.
+ */
+function categorias_arbol(array $cats): array {
+  $ids = [];
+  foreach ($cats as $c) { $ids[(int)$c['id']] = true; }
+
+  $porPadre = [];
+  foreach ($cats as $c) {
+    $pid = (int)($c['parent_id'] ?? 0);
+    if ($pid && !isset($ids[$pid])) { $pid = 0; }   // huérfana -> principal
+    $porPadre[$pid][] = $c;
+  }
+
+  $out = [];
+  foreach ($porPadre[0] ?? [] as $padre) {
+    $out[] = $padre + ['depth' => 0];
+    foreach ($porPadre[(int)$padre['id']] ?? [] as $hija) {
+      $out[] = $hija + ['depth' => 1];
+    }
+  }
+  return $out;
 }
 
 function unique_slug(PDO $pdo, string $base): string {
@@ -293,6 +337,7 @@ elseif ($action === 'update_variant') {
 
 /* ========= CARGA DE DATOS ========= */
 $catsCols = has_column($pdo, 'categories', 'slug') ? 'id, name, slug' : 'id, name';
+if (has_column($pdo, 'categories', 'parent_id')) { $catsCols .= ', parent_id'; }
 $cats = $pdo->query("SELECT {$catsCols} FROM categories ORDER BY name")->fetchAll(PDO::FETCH_ASSOC);
 
      $sql = "SELECT
@@ -433,14 +478,20 @@ if ($msg !== '') {
               <label class="form-label">Categoría</label>
               <select class="form-select select-cat" name="category_id">
                 <option value="">(Ninguna)</option>
-                <?php foreach ($cats as $c): ?>
-                  <option value="<?= (int)$c['id'] ?>"><?= e($c['name']) ?></option>
+                <?php foreach (categorias_arbol($cats) as $c): ?>
+                  <option value="<?= (int)$c['id'] ?>"><?= $c['depth'] ? '— ' : '' ?><?= e($c['name']) ?></option>
                 <?php endforeach; ?>
                 <option value="__nueva__">+ Nueva categoría…</option>
               </select>
               <input type="text" class="form-control mt-2 d-none input-cat-nueva"
                      name="category_nueva" maxlength="120"
                      placeholder="Nombre de la categoría nueva">
+              <select class="form-select mt-2 d-none select-cat-padre" name="category_padre">
+                <option value="">Como categoría principal</option>
+                <?php foreach ($cats as $c): if (!empty($c['parent_id'])) continue; ?>
+                  <option value="<?= (int)$c['id'] ?>">Dentro de: <?= e($c['name']) ?></option>
+                <?php endforeach; ?>
+              </select>
             </div>
             <div class="col-12">
               <label class="form-label">Descripción</label>
@@ -488,14 +539,20 @@ if ($msg !== '') {
               <label class="form-label">Categoría</label>
               <select class="form-select select-cat" name="category_id" id="edit_cat">
                 <option value="">(Ninguna)</option>
-                <?php foreach ($cats as $c): ?>
-                  <option value="<?= (int)$c['id'] ?>"><?= e($c['name']) ?></option>
+                <?php foreach (categorias_arbol($cats) as $c): ?>
+                  <option value="<?= (int)$c['id'] ?>"><?= $c['depth'] ? '— ' : '' ?><?= e($c['name']) ?></option>
                 <?php endforeach; ?>
                 <option value="__nueva__">+ Nueva categoría…</option>
               </select>
               <input type="text" class="form-control mt-2 d-none input-cat-nueva"
                      name="category_nueva" maxlength="120"
                      placeholder="Nombre de la categoría nueva">
+              <select class="form-select mt-2 d-none select-cat-padre" name="category_padre">
+                <option value="">Como categoría principal</option>
+                <?php foreach ($cats as $c): if (!empty($c['parent_id'])) continue; ?>
+                  <option value="<?= (int)$c['id'] ?>">Dentro de: <?= e($c['name']) ?></option>
+                <?php endforeach; ?>
+              </select>
             </div>
             <div class="col-12">
               <label class="form-label">Descripción</label>
@@ -757,10 +814,12 @@ document.addEventListener('change', function (ev) {
   const sel = ev.target.closest('.select-cat');
   if (!sel) return;
   const campo = sel.parentElement.querySelector('.input-cat-nueva');
+  const padre = sel.parentElement.querySelector('.select-cat-padre');
   if (!campo) return;
   const nueva = sel.value === '__nueva__';
   campo.classList.toggle('d-none', !nueva);
   campo.required = nueva;
+  if (padre) { padre.classList.toggle('d-none', !nueva); if (!nueva) padre.value = ''; }
   if (nueva) { campo.focus(); } else { campo.value = ''; }
 });
 

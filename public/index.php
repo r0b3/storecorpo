@@ -26,14 +26,31 @@ function product_image_col(PDO $pdo): ?string {
 $q   = trim($_GET['q']   ?? '');
 $cat = trim($_GET['cat'] ?? '');
 
+// Filtros por opción de variante: ?opt[Talla]=M&opt[Color]=Rojo
+// Se combinan entre sí (AND): cada uno exige que el producto tenga AL MENOS
+// una variante activa con ese valor. Es un EXISTS y no un JOIN para no
+// multiplicar filas por variante ni necesitar DISTINCT.
+$opt = [];
+foreach ((array)($_GET['opt'] ?? []) as $k => $v) {
+  $k = trim((string)$k); $v = trim((string)$v);
+  if ($k !== '' && $v !== '') { $opt[$k] = $v; }
+}
+
+$hasParent = has_column($pdo, 'categories', 'parent_id');
+
 /* ===== Carga de productos con categoría (por slug) ===== */
 $imgCol = product_image_col($pdo);
 $imgSQL = $imgCol ? ", p.{$imgCol} AS image" : "";
 
+// El JOIN al padre permite que filtrar por una categoría principal incluya
+// también los productos de sus subcategorías.
+$joinPadre = $hasParent ? " LEFT JOIN categories padre ON padre.id = c.parent_id" : "";
+$selPadre  = $hasParent ? ", padre.name AS parent_name, padre.slug AS parent_slug" : "";
+
 $sql = "SELECT p.id, p.name, p.description, p.base_price{$imgSQL},
-               c.name AS category, c.slug AS category_slug
+               c.name AS category, c.slug AS category_slug{$selPadre}
         FROM products p
-        LEFT JOIN categories c ON c.id = p.category_id
+        LEFT JOIN categories c ON c.id = p.category_id{$joinPadre}
         WHERE 1=1";
 $args = [];
 
@@ -42,8 +59,19 @@ if ($q !== '') {
   $args[':q'] = "%{$q}%";
 }
 if ($cat !== '') {
-  $sql .= " AND c.slug = :cat";
+  $sql .= $hasParent ? " AND (c.slug = :cat OR padre.slug = :cat)" : " AND c.slug = :cat";
   $args[':cat'] = $cat;
+}
+$i = 0;
+foreach ($opt as $nombre => $valor) {
+  $i++;
+  $pn = ":on{$i}"; $pv = ":ov{$i}";
+  $sql .= " AND EXISTS (SELECT 1 FROM product_variants v
+                         WHERE v.product_id = p.id
+                           AND (v.active = 1 OR v.active IS NULL)
+                           AND ((v.option1_name = {$pn} AND v.option1_value = {$pv})
+                             OR (v.option2_name = {$pn} AND v.option2_value = {$pv})))";
+  $args[$pn] = $nombre; $args[$pv] = $valor;
 }
 
 $sql .= " ORDER BY p.created_at DESC, p.id DESC";
@@ -69,7 +97,39 @@ if ($products) {
 }
 
 /* ===== Categorías (para el selector) ===== */
-$cats = $pdo->query("SELECT name, slug FROM categories ORDER BY name")->fetchAll(PDO::FETCH_ASSOC);
+$catCols = $hasParent ? "id, name, slug, parent_id" : "id, name, slug";
+$cats = $pdo->query("SELECT {$catCols} FROM categories ORDER BY name")->fetchAll(PDO::FETCH_ASSOC);
+
+// Facetas de variante: valores realmente en uso, para no ofrecer filtros vacíos.
+$facetas = [];
+foreach ([1, 2] as $n) {
+  $rows = $pdo->query(
+    "SELECT DISTINCT option{$n}_name AS nombre, option{$n}_value AS valor
+       FROM product_variants
+      WHERE (active = 1 OR active IS NULL)
+        AND option{$n}_name IS NOT NULL AND option{$n}_name <> ''
+        AND option{$n}_value IS NOT NULL AND option{$n}_value <> ''
+      ORDER BY nombre, valor"
+  )->fetchAll(PDO::FETCH_ASSOC);
+  foreach ($rows as $r) { $facetas[$r['nombre']][$r['valor']] = true; }
+}
+foreach ($facetas as $n => $vals) { $facetas[$n] = array_keys($vals); }
+
+// Padres y, si hay uno seleccionado, sus hijas (para la segunda fila de píldoras).
+$padres = array_values(array_filter($cats, fn($c) => empty($c['parent_id'])));
+$catSel = null;
+foreach ($cats as $c) { if ((string)$c['slug'] === $cat) { $catSel = $c; break; } }
+$ramaId = $catSel ? (int)($catSel['parent_id'] ?: $catSel['id']) : 0;
+$hijas  = $ramaId ? array_values(array_filter($cats, fn($c) => (int)($c['parent_id'] ?? 0) === $ramaId)) : [];
+$ramaSlug = '';
+if ($ramaId) { foreach ($cats as $c) { if ((int)$c['id'] === $ramaId) { $ramaSlug = (string)$c['slug']; break; } } }
+
+/** Conserva los filtros vigentes al construir un enlace. */
+function url_filtros(array $cambios): string {
+  $qs = array_merge(['q' => $_GET['q'] ?? '', 'cat' => $_GET['cat'] ?? '', 'opt' => (array)($_GET['opt'] ?? [])], $cambios);
+  $qs = array_filter($qs, fn($v) => $v !== '' && $v !== [] && $v !== null);
+  return url('index.php') . ($qs ? '?' . http_build_query($qs) : '');
+}
 
 /* ===== Render ===== */
 ob_start(); ?>
@@ -87,27 +147,51 @@ ob_start(); ?>
   </form>
 </div>
 
-<!-- Filtro de categorías (píldoras) -->
+<!-- Filtros: categorías principales, subcategorías y opciones de variante -->
 <div class="mb-3">
   <div class="d-flex flex-wrap gap-2 align-items-center filtros-cat">
     <a class="btn btn-sm <?= $cat==='' ? 'btn-primary' : 'btn-outline-secondary' ?>"
-       href="<?= url('index.php') . ($q!=='' ? ('?q=' . urlencode($q)) : '') ?>">
-      Todas
-    </a>
-    <?php foreach ($cats as $c): 
-      $isActive = ($cat === (string)$c['slug']);
-      // reconstruye query manteniendo 'q'
-      $href = url('index.php') . '?cat=' . urlencode($c['slug']) . ($q!=='' ? '&q=' . urlencode($q) : '');
+       href="<?= e(url_filtros(['cat' => ''])) ?>">Todas</a>
+    <?php foreach ($padres as $c):
+      // Una principal queda marcada también cuando lo elegido es una hija suya.
+      $activa = ($cat === (string)$c['slug']) || ($ramaId === (int)$c['id']);
     ?>
-      <a class="btn btn-sm <?= $isActive ? 'btn-primary' : 'btn-outline-secondary' ?>" href="<?= $href ?>">
-        <?= e($c['name']) ?>
-      </a>
+      <a class="btn btn-sm <?= $activa ? 'btn-primary' : 'btn-outline-secondary' ?>"
+         href="<?= e(url_filtros(['cat' => $c['slug']])) ?>"><?= e($c['name']) ?></a>
     <?php endforeach; ?>
 
-    <?php if ($cat !== '' || $q !== ''): ?>
+    <?php if ($cat !== '' || $q !== '' || $opt): ?>
       <a class="btn btn-sm btn-outline-dark ms-auto" href="<?= url('index.php') ?>">Limpiar filtros</a>
     <?php endif; ?>
   </div>
+
+  <?php if ($hijas): ?>
+    <!-- Subcategorías de la rama elegida. "Todo en X" vuelve al padre, que
+         incluye los productos de todas sus hijas. -->
+    <div class="d-flex flex-wrap gap-2 align-items-center filtros-cat mt-2 ms-1">
+      <span class="small text-muted me-1">Subcategorías:</span>
+      <a class="btn btn-sm <?= $cat === $ramaSlug ? 'btn-secondary' : 'btn-outline-secondary' ?>"
+         href="<?= e(url_filtros(['cat' => $ramaSlug])) ?>">Todo</a>
+      <?php foreach ($hijas as $h): ?>
+        <a class="btn btn-sm <?= $cat === (string)$h['slug'] ? 'btn-secondary' : 'btn-outline-secondary' ?>"
+           href="<?= e(url_filtros(['cat' => $h['slug']])) ?>"><?= e($h['name']) ?></a>
+      <?php endforeach; ?>
+    </div>
+  <?php endif; ?>
+
+  <?php foreach ($facetas as $nombre => $valores): ?>
+    <div class="d-flex flex-wrap gap-2 align-items-center filtros-cat mt-2 ms-1">
+      <span class="small text-muted me-1"><?= e($nombre) ?>:</span>
+      <?php foreach ($valores as $v):
+        $puesto = (($opt[$nombre] ?? '') === $v);
+        // Volver a pulsar el valor activo lo quita: el filtro es un interruptor.
+        $nuevoOpt = $opt; if ($puesto) { unset($nuevoOpt[$nombre]); } else { $nuevoOpt[$nombre] = $v; }
+      ?>
+        <a class="btn btn-sm <?= $puesto ? 'btn-primary' : 'btn-outline-secondary' ?>"
+           href="<?= e(url_filtros(['opt' => $nuevoOpt])) ?>"><?= e($v) ?></a>
+      <?php endforeach; ?>
+    </div>
+  <?php endforeach; ?>
 </div>
 
 <?php if (!$products): ?>
@@ -128,7 +212,9 @@ ob_start(); ?>
       <div class="card-body d-flex flex-column">
         <h5 class="card-title mb-1"><?= e($p['name']) ?></h5>
         <?php if (!empty($p['category'])): ?>
-          <div class="mb-1"><span class="badge bg-light text-dark"><?= e($p['category']) ?></span></div>
+          <div class="mb-1"><span class="badge bg-light text-dark"><?php
+            echo e(!empty($p['parent_name']) ? $p['parent_name'] . ' › ' . $p['category'] : $p['category']);
+          ?></span></div>
         <?php endif; ?>
         <div class="text-muted small mb-2">
           <?= e($desc !== '' ? mb_strimwidth($desc,0,120,'…','UTF-8') : '') ?>

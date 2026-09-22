@@ -39,13 +39,23 @@ CREATE TABLE IF NOT EXISTS `usuarios` (
   UNIQUE KEY `uq_usuarios_nombre_usuario` (`nombre_usuario`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
--- ---------- Categorías ----------
+-- ---------- Categorías, con UN nivel de subcategoría (parent_id).
+-- Sirve para taxonomía: Camisetas > Hombre / Mujer. NO para talla ni color:
+-- esos son variantes (product_variants.option1/2), que además llevan SKU,
+-- precio y stock por combinación. Meterlos aquí duplicaría el dato y se
+-- perdería el stock por talla.
+-- ON DELETE SET NULL, no CASCADE: borrar una categoría padre no debe llevarse
+-- por delante sus hijas en silencio; quedan como categorías de primer nivel.
 CREATE TABLE IF NOT EXISTS `categories` (
-  `id`   INT UNSIGNED NOT NULL AUTO_INCREMENT,
-  `name` VARCHAR(120) NOT NULL,
-  `slug` VARCHAR(140) NOT NULL,
+  `id`        INT UNSIGNED NOT NULL AUTO_INCREMENT,
+  `name`      VARCHAR(120) NOT NULL,
+  `slug`      VARCHAR(140) NOT NULL,
+  `parent_id` INT UNSIGNED DEFAULT NULL,
   PRIMARY KEY (`id`),
-  UNIQUE KEY `uq_categories_slug` (`slug`)
+  UNIQUE KEY `uq_categories_slug` (`slug`),
+  KEY `ix_categories_parent` (`parent_id`),
+  CONSTRAINT `fk_categories_parent` FOREIGN KEY (`parent_id`)
+      REFERENCES `categories` (`id`) ON DELETE SET NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- ---------- Productos ----------

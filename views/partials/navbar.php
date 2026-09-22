@@ -49,13 +49,39 @@ if (!empty($_SESSION['cart']) && is_array($_SESSION['cart'])) {
             <a class="nav-link dropdown-toggle" href="#" data-bs-toggle="dropdown" aria-expanded="false">Categorías</a>
             <ul class="dropdown-menu">
               <li><a class="dropdown-item" href="<?= url('index.php') ?>">Todas</a></li>
-              <?php if ($cats): foreach ($cats as $c): ?>
+              <?php
+              // Jerarquía de un nivel. Solo si quien renderiza pasó parent_id:
+              // cart/checkout/product traen $cats sin esa columna y entonces
+              // se pinta la lista plana de siempre.
+              $tienePadre = $cats && array_key_exists('parent_id', $cats[0]);
+              if ($tienePadre) {
+                $porPadre = [];
+                $ids = [];
+                foreach ($cats as $c) { $ids[(int)$c['id']] = true; }
+                foreach ($cats as $c) {
+                  $pid = (int)($c['parent_id'] ?? 0);
+                  if ($pid && !isset($ids[$pid])) { $pid = 0; }
+                  $porPadre[$pid][] = $c;
+                }
+                $orden = [];
+                foreach ($porPadre[0] ?? [] as $padre) {
+                  $orden[] = ['c' => $padre, 'hija' => false];
+                  foreach ($porPadre[(int)$padre['id']] ?? [] as $h) {
+                    $orden[] = ['c' => $h, 'hija' => true];
+                  }
+                }
+              } else {
+                $orden = array_map(fn($c) => ['c' => $c, 'hija' => false], $cats ?: []);
+              }
+              ?>
+              <?php foreach ($orden as $fila): $c = $fila['c']; ?>
                 <li>
-                  <a class="dropdown-item" href="<?= url('index.php') . '?cat=' . urlencode((string)$c['slug']) ?>">
-                    <?= e($c['name']) ?>
+                  <a class="dropdown-item<?= $fila['hija'] ? ' ps-4 small' : '' ?>"
+                     href="<?= url('index.php') . '?cat=' . urlencode((string)$c['slug']) ?>">
+                    <?= $fila['hija'] ? '› ' : '' ?><?= e($c['name']) ?>
                   </a>
                 </li>
-              <?php endforeach; endif; ?>
+              <?php endforeach; ?>
             </ul>
           </li>
 
