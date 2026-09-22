@@ -29,6 +29,10 @@
 
           <!-- Campos Natural -->
           <div class="col-12 group-natural">
+            <div class="alert alert-secondary py-2 px-3 small mb-3">
+              Si el cliente no quiere dar sus datos, deja los campos vacíos:
+              se guardarán como <strong>ND</strong> y la venta se cierra igual.
+            </div>
             <div class="row g-3">
               <div class="col-md-6">
                 <label class="form-label">Nombre</label>
@@ -57,7 +61,7 @@
 
           <div class="col-md-6">
             <label class="form-label">Correo</label>
-            <input class="form-control" type="email" name="customer_email" value="<?= e($_POST['customer_email'] ?? '') ?>" required>
+            <input class="form-control" type="email" name="customer_email" value="<?= e($_POST['customer_email'] ?? '') ?>">
           </div>
           <div class="col-md-6">
             <label class="form-label">Teléfono</label>
@@ -66,7 +70,7 @@
 
           <div class="col-12">
             <label class="form-label">Dirección</label>
-            <input class="form-control" name="shipping_address" value="<?= e($_POST['shipping_address'] ?? '') ?>" required>
+            <input class="form-control" name="shipping_address" value="<?= e($_POST['shipping_address'] ?? '') ?>">
           </div>
 
           <!-- Método de pago -->
@@ -153,6 +157,13 @@
     const ct = document.querySelector('input[name="customer_type"]:checked')?.value || 'natural';
     gNatural.style.display = ct === 'natural' ? '' : 'none';
     gEmpresa.style.display = ct === 'empresa' ? '' : 'none';
+
+    // Correo y dirección solo son obligatorios para empresa (facturación).
+    // En natural el servidor los rellena con ND si van vacíos, así que el
+    // navegador no debe bloquear el envío.
+    const esEmpresa = ct === 'empresa';
+    document.querySelectorAll('[name="customer_email"], [name="shipping_address"]')
+      .forEach(el => { el.required = esEmpresa; });
 
     const pm = document.querySelector('input[name="payment_method"]:checked')?.value || 'efectivo';
     gTransfer.style.display = pm === 'transferencia' ? '' : 'none';

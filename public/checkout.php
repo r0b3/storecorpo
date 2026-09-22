@@ -56,26 +56,33 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
     $payment_ref = trim($_POST['payment_ref'] ?? '');
   }
 
+  // Marca para los datos que el cliente no quiso dar. Se guarda en vez de
+  // dejar NULL para que en Ventas se distinga "no lo dio" de "falta por
+  // capturar", y para que las columnas obligatorias del esquema no fallen.
+  $sinDato = 'ND';
+
   if ($customer_type === 'empresa') {
+    // Empresa sigue siendo estricta: el NIT y el correo hacen falta para
+    // facturar. Aquí NO se rellena con ND.
     $company_name = trim($_POST['company_name'] ?? '');
     $company_nit  = trim($_POST['company_nit'] ?? '');
     if ($company_name === '' || $company_nit === '') {
       $err = 'Para cliente empresa, nombre de empresa y NIT son obligatorios.';
     }
+    if ($customer_email === '')   { $err = 'El correo del cliente es obligatorio.'; }
+    if ($shipping_address === '') { $err = 'La dirección es obligatoria.'; }
   } else {
+    // Natural: todo opcional. Muchos clientes de mostrador no quieren dar sus
+    // datos y el vendedor no puede quedarse sin cerrar la venta por eso.
     $customer_type = 'natural';
     $person_name = trim($_POST['person_name'] ?? '');
     $person_id   = trim($_POST['person_id'] ?? '');
-    if ($person_name === '' || $person_id === '') {
-      $err = 'Para cliente natural, nombre y cédula son obligatorios.';
-    }
-  }
 
-  if (empty($customer_email)) {
-    $err = 'El correo del cliente es obligatorio.';
-  }
-  if (empty($shipping_address)) {
-    $err = 'La dirección es obligatoria.';
+    if ($person_name === '')      { $person_name      = $sinDato; }
+    if ($person_id === '')        { $person_id        = $sinDato; }
+    if ($customer_email === '')   { $customer_email   = $sinDato; }
+    if ($customer_phone === '')   { $customer_phone   = $sinDato; }
+    if ($shipping_address === '') { $shipping_address = $sinDato; }
   }
   if (!empty($err)) {
     // Re-render con error
