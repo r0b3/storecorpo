@@ -160,11 +160,12 @@ function url_filtros(array $cambios): string {
 /* ===== Render ===== */
 ob_start(); ?>
 
-<div class="d-flex align-items-center mb-3">
-  <h4 class="mb-0">Catálogo</h4>
+<div class="d-flex flex-wrap align-items-center gap-2 mb-3">
+  <h4 class="mb-0 me-auto">Catálogo</h4>
 
-  <!-- Buscador -->
-  <form class="ms-auto d-flex" method="get" action="<?= url('index.php') ?>">
+  <!-- Buscador de página: solo donde el de la navbar queda escondido dentro
+       del menú colapsado. En escritorio había dos buscadores. -->
+  <form class="d-flex d-lg-none flex-grow-1 buscador-pagina" method="get" action="<?= url('index.php') ?>">
     <?php if ($cat !== ''): ?>
       <input type="hidden" name="cat" value="<?= e($cat) ?>">
     <?php endif; ?>
@@ -224,111 +225,206 @@ ob_start(); ?>
   <div class="alert alert-info">No hay productos que coincidan con los filtros.</div>
 <?php endif; ?>
 
-<div class="row g-3">
+<?php
+/** Valores de una opción en orden útil: tallas por tamaño, el resto natural. */
+function ordenar_valores(array $vals): array {
+  static $rango = null;
+  $rango ??= array_flip(['XXS','XS','S','M','L','XL','XXL','XXXL']);
+  $vals = array_values(array_unique($vals));
+  usort($vals, function ($a, $b) use ($rango) {
+    $ra = $rango[strtoupper($a)] ?? null; $rb = $rango[strtoupper($b)] ?? null;
+    if ($ra !== null && $rb !== null) return $ra <=> $rb;
+    if ($ra !== null) return -1;
+    if ($rb !== null) return 1;
+    return strnatcasecmp($a, $b);
+  });
+  return $vals;
+}
+?>
+<div class="row g-3 catalogo">
 <?php foreach ($products as $p):
   $pid   = (int)$p['id'];
+  $vlist = $variantsByProduct[$pid] ?? [];
   // Sin foto de producto, la de su primera variante con foto: tras unificar
   // colores en un producto, las fotos quedaron en las variantes.
-  $img   = $p['image'] ?? null;
+  $img = $p['image'] ?? null;
   if (!$img) {
-    foreach ($variantsByProduct[(int)$p['id']] ?? [] as $vv) {
-      if (!empty($vv['image'])) { $img = $vv['image']; break; }
-    }
+    foreach ($vlist as $vv) { if (!empty($vv['image'])) { $img = $vv['image']; break; } }
   }
-  $img   = $img ?: 'placeholder.png';
-  $desc  = (string)($p['description'] ?? '');
-  $vlist = $variantsByProduct[$pid] ?? [];
-?>
-  <div class="col-12 col-md-6 col-lg-4">
-    <div class="card h-100 shadow-sm">
-      <img src="<?= e(url('uploads/' . $img)) ?>" class="card-img-top"
-           onerror="this.src='<?= url('uploads/placeholder.png') ?>'">
-      <div class="card-body d-flex flex-column">
-        <h5 class="card-title mb-1"><?= e($p['name']) ?></h5>
-        <?php if (!empty($p['category'])): ?>
-          <div class="mb-1"><span class="badge bg-light text-dark"><?php
-            echo e(!empty($p['parent_name']) ? $p['parent_name'] . ' › ' . $p['category'] : $p['category']);
-          ?></span></div>
-        <?php endif; ?>
-        <div class="text-muted small mb-2">
-          <?= e($desc !== '' ? mb_strimwidth($desc,0,120,'…','UTF-8') : '') ?>
-        </div>
+  $img  = $img ?: 'placeholder.png';
+  $desc = trim((string)($p['description'] ?? ''));
+  $base = (float)$p['base_price'];
 
-        <?php if (empty($vlist)): ?>
-          <!-- Sin variantes: precio base -->
-          <div class="border rounded p-2 d-flex align-items-center justify-content-between mb-2 linea-compra">
-            <div>
-              <div class="small text-muted">Precio</div>
-              <div class="fw-semibold">$<?= money($p['base_price']) ?></div>
-            </div>
-            <div class="d-flex align-items-center gap-1 qty-group">
-              <button class="btn btn-sm btn-outline-secondary btn-qty" data-target="#q_<?= $pid ?>_0" data-delta="-1" type="button">–</button>
-              <input id="q_<?= $pid ?>_0" class="form-control form-control-sm text-center qty-input"
-                     type="number" min="1" value="1">
-              <button class="btn btn-sm btn-outline-secondary btn-qty" data-target="#q_<?= $pid ?>_0" data-delta="+1" type="button">+</button>
-              <button class="btn btn-sm btn-primary ms-1 btn-add"
-                      data-pid="<?= $pid ?>" data-vid=""
-                      data-qref="#q_<?= $pid ?>_0" type="button">Agregar</button>
-            </div>
-          </div>
-        <?php else: ?>
-          <!-- Con variantes: lista con controles -->
-          <div class="small text-muted mb-1">Variantes</div>
-          <div class="list-group list-group-flush">
-            <?php foreach ($vlist as $v):
-              $vid = (int)$v['id'];
-              $o1n = trim((string)($v['option1_name'] ?? ''));
-              $o1v = trim((string)($v['option1_value'] ?? ''));
-              $o2n = trim((string)($v['option2_name'] ?? ''));
-              $o2v = trim((string)($v['option2_value'] ?? ''));
-              $labelParts = [];
-              if ($o1n !== '' || $o1v !== '') $labelParts[] = ($o1n!==''?$o1n.': ':'').($o1v!==''?$o1v:'');
-              if ($o2n !== '' || $o2v !== '') $labelParts[] = ($o2n!==''?$o2n.': ':'').($o2v!==''?$o2v:'');
-              $label = implode(' / ', array_filter($labelParts, fn($x)=>trim($x) !== ''));
-              // En la tarjeta basta con los valores ("Amarilla · M"): los filtros de
-              // arriba ya nombran las dimensiones y la forma larga se partía en 3-4
-              // líneas. La forma larga queda en el title y en el carrito/recibo.
-              $corta = implode(' · ', array_filter([$o1v, $o2v], fn($x) => $x !== ''));
-              $price = $v['price'] !== null ? (float)$v['price'] : (float)$p['base_price'];
-              $stock = isset($v['stock']) ? (int)$v['stock'] : null;
-              // Después de $stock, no antes: calculado arriba usaba el stock de
-              // la fila ANTERIOR y marcaba agotada la variante equivocada.
-              $agotada = ($stock !== null && $stock <= 0);
-            ?>
-              <div class="list-group-item d-flex align-items-center justify-content-between linea-compra">
-                <?php if (!empty($v['image'])): ?>
-                  <img src="<?= e(url('uploads/' . $v['image'])) ?>" alt="" class="var-mini me-2"
-                       width="40" height="40" loading="lazy" onerror="this.remove()">
-                <?php endif; ?>
-                <div class="me-2 flex-grow-1">
-                  <div class="fw-semibold" title="<?= e($label) ?>"><?= e($corta ?: ($label ?: 'Variante')) ?></div>
-                  <div class="small text-muted">
-                    $<?= money($price) ?><?php if ($agotada): ?> · <span class="badge text-bg-secondary">Agotado</span><?php else: ?><?= ($stock!==null?' · Stock: '.(int)$stock:'') ?><?php endif; ?>
-                  </div>
-                </div>
-                <div class="d-flex align-items-center gap-1 qty-group">
-                  <button class="btn btn-sm btn-outline-secondary btn-qty"
-                          data-target="#q_<?= $pid ?>_<?= $vid ?>" data-delta="-1" type="button">–</button>
-                  <input id="q_<?= $pid ?>_<?= $vid ?>" class="form-control form-control-sm text-center qty-input" type="number" min="1" value="1"
-                         <?= ($stock!==null && $stock>0) ? 'max="'.$stock.'"' : '' ?>>
-                  <button class="btn btn-sm btn-outline-secondary btn-qty"
-                          data-target="#q_<?= $pid ?>_<?= $vid ?>" data-delta="+1" type="button">+</button>
-                  <button class="btn btn-sm btn-primary ms-1 btn-add"
-                          data-pid="<?= $pid ?>" data-vid="<?= $vid ?>"
-                          data-qref="#q_<?= $pid ?>_<?= $vid ?>" type="button"
-                          <?= $agotada ? 'disabled title="Sin stock"' : '' ?>>Agregar</button>
+  // ¿Tiene opciones reales (talla, color…)? Si no, se vende como producto
+  // simple aunque tenga una variante: esa variante solo guarda el stock, y
+  // mostrarla como fila "Variante" no le decía nada al vendedor.
+  $conOpciones = false;
+  foreach ($vlist as $vv) {
+    if (trim((string)($vv['option1_value'] ?? '')) !== '' || trim((string)($vv['option2_value'] ?? '')) !== '') { $conOpciones = true; break; }
+  }
+
+  $stockS = null; $vidS = '';
+  if (!$conOpciones) {
+    $vS     = $vlist[0] ?? null;
+    $precio = ($vS && $vS['price'] !== null) ? (float)$vS['price'] : $base;
+    $stockS = $vS ? (int)$vS['stock'] : null;
+    $vidS   = $vS ? (int)$vS['id'] : '';
+  } else {
+    $vars = []; $vals1 = []; $vals2 = [];
+    $nom1 = ''; $nom2 = '';
+    foreach ($vlist as $vv) {
+      $o1 = trim((string)($vv['option1_value'] ?? '')); $o2 = trim((string)($vv['option2_value'] ?? ''));
+      if ($o1 !== '') { $vals1[] = $o1; $nom1 = $nom1 ?: trim((string)$vv['option1_name']); }
+      if ($o2 !== '') { $vals2[] = $o2; $nom2 = $nom2 ?: trim((string)$vv['option2_name']); }
+      $vars[] = [
+        'id' => (int)$vv['id'], 'o1' => $o1, 'o2' => $o2,
+        'precio' => $vv['price'] !== null ? (float)$vv['price'] : $base,
+        'stock'  => (int)$vv['stock'],
+        'img'    => (string)($vv['image'] ?? ''),
+      ];
+    }
+    $vals1 = ordenar_valores($vals1);
+    $vals2 = ordenar_valores($vals2);
+    // Si el catálogo viene filtrado (p. ej. Talla=M), la tarjeta arranca en esa talla.
+    $pref = ['o1' => $opt[$nom1] ?? '', 'o2' => $opt[$nom2] ?? ''];
+    $precio = $vars[0]['precio'] ?? $base;
+  }
+  $cat_txt = !empty($p['category'])
+    ? (!empty($p['parent_name']) ? $p['parent_name'] . ' › ' . $p['category'] : $p['category'])
+    : '';
+  $agotadoS = !$conOpciones && $stockS !== null && $stockS <= 0;
+?>
+  <div class="col-12 col-sm-6 col-lg-4 col-xxl-3">
+    <div class="card h-100 shadow-sm producto">
+      <img src="<?= e(url('uploads/' . $img)) ?>" class="card-img-top prod-foto" alt="<?= e($p['name']) ?>"
+           data-orig="<?= e(url('uploads/' . $img)) ?>"
+           onerror="this.onerror=null;this.src='<?= url('uploads/placeholder.png') ?>'">
+      <div class="card-body d-flex flex-column">
+        <?php if ($cat_txt !== ''): ?>
+          <div class="prod-cat"><?= e($cat_txt) ?></div>
+        <?php endif; ?>
+        <h5 class="card-title prod-nombre"><?= e($p['name']) ?></h5>
+        <?php if ($desc !== ''): ?>
+          <div class="prod-desc text-muted small"><?= e($desc) ?></div>
+        <?php endif; ?>
+
+        <?php if ($conOpciones): ?>
+          <div class="selector mt-2"
+               data-variantes="<?= e(json_encode($vars, JSON_UNESCAPED_UNICODE)) ?>"
+               data-pref="<?= e(json_encode($pref, JSON_UNESCAPED_UNICODE)) ?>"
+               data-base-uploads="<?= e(url('uploads/')) ?>">
+            <?php foreach ([1 => [$nom1, $vals1], 2 => [$nom2, $vals2]] as $dim => [$nom, $vals]): if (!$vals) continue; ?>
+              <div class="mb-2">
+                <div class="sel-label"><?= e($nom ?: 'Opción') ?>: <strong data-actual="<?= $dim ?>"></strong></div>
+                <div class="d-flex flex-wrap gap-1" role="group" aria-label="<?= e($nom ?: 'Opción') ?>">
+                  <?php foreach ($vals as $val): ?>
+                    <button type="button" class="chip" data-dim="<?= $dim ?>" data-val="<?= e($val) ?>"
+                            aria-pressed="false"><?= e($val) ?></button>
+                  <?php endforeach; ?>
                 </div>
               </div>
             <?php endforeach; ?>
           </div>
         <?php endif; ?>
 
-        <div class="mt-auto"></div>
+        <!-- Zona de compra anclada al fondo: los botones quedan alineados entre
+             tarjetas aunque una tenga más opciones que otra. -->
+        <div class="mt-auto pt-2 compra">
+          <div class="d-flex align-items-baseline justify-content-between mb-2">
+            <span class="prod-precio">$<?= money($precio) ?></span>
+            <span class="prod-estado small text-muted"><?php
+              if (!$conOpciones) {
+                if ($agotadoS) echo '<span class="badge text-bg-secondary">Agotado</span>';
+                elseif ($stockS !== null) echo 'Stock: ' . (int)$stockS;
+              }
+            ?></span>
+          </div>
+          <div class="d-flex align-items-center gap-1 qty-group">
+            <button class="btn btn-sm btn-outline-secondary btn-qty" data-target="#q_<?= $pid ?>" data-delta="-1"
+                    type="button" aria-label="Menos">–</button>
+            <input id="q_<?= $pid ?>" class="form-control form-control-sm text-center qty-input"
+                   type="number" min="1" value="1" aria-label="Cantidad"
+                   <?= (!$conOpciones && $stockS !== null && $stockS > 0) ? 'max="' . (int)$stockS . '"' : '' ?>>
+            <button class="btn btn-sm btn-outline-secondary btn-qty" data-target="#q_<?= $pid ?>" data-delta="+1"
+                    type="button" aria-label="Más">+</button>
+            <button class="btn btn-sm btn-primary ms-1 btn-add flex-grow-1"
+                    data-pid="<?= $pid ?>" data-vid="<?= $conOpciones ? '' : $vidS ?>"
+                    data-qref="#q_<?= $pid ?>" type="button"
+                    <?= $agotadoS ? 'disabled title="Sin stock"' : '' ?>>Agregar</button>
+          </div>
+        </div>
       </div>
     </div>
   </div>
 <?php endforeach; ?>
 </div>
+
+<script>
+// Selector de variantes: con Color y Talla elegidos se resuelve UNA variante;
+// su precio, stock y foto pasan a la zona de compra y su id al botón Agregar
+// (que sigue usando el manejador AJAX de siempre).
+(function () {
+  const moneda = n => '$' + new Intl.NumberFormat('es-CO', { maximumFractionDigits: 0 }).format(n);
+
+  document.querySelectorAll('.selector').forEach(sel => {
+    const V     = JSON.parse(sel.dataset.variantes || '[]');
+    const pref  = JSON.parse(sel.dataset.pref || '{}');
+    const baseU = sel.dataset.baseUploads || '';
+    const card  = sel.closest('.producto');
+    const dims  = [...new Set([...sel.querySelectorAll('.chip')].map(c => +c.dataset.dim))];
+    const val   = (v, d) => d === 1 ? v.o1 : v.o2;
+    const st    = {};
+
+    // Arranque: lo que pida el filtro activo; si no, la primera con stock.
+    const ini = V.find(v => (!pref.o1 || v.o1 === pref.o1) && (!pref.o2 || v.o2 === pref.o2) && v.stock > 0)
+             || V.find(v => v.stock > 0) || V[0];
+    dims.forEach(d => { st[d] = ini ? val(ini, d) : null; });
+
+    const actual = () => V.find(v => dims.every(d => val(v, d) === st[d]));
+
+    function pintar() {
+      sel.querySelectorAll('.chip').forEach(ch => {
+        const d = +ch.dataset.dim, x = ch.dataset.val, on = st[d] === x;
+        ch.classList.toggle('activo', on);
+        ch.setAttribute('aria-pressed', on ? 'true' : 'false');
+        // Disponible = existe con lo elegido en la otra dimensión y tiene stock.
+        const cand = V.find(v => val(v, d) === x && dims.every(o => o === d || val(v, o) === st[o]));
+        ch.classList.toggle('sin-stock', !cand || cand.stock <= 0);
+      });
+      dims.forEach(d => { const t = sel.querySelector('[data-actual="' + d + '"]'); if (t) t.textContent = st[d] || ''; });
+
+      const v = actual();
+      const precio = card.querySelector('.prod-precio'), estado = card.querySelector('.prod-estado');
+      const btn = card.querySelector('.btn-add'), inp = card.querySelector('.qty-input'), foto = card.querySelector('.prod-foto');
+
+      if (!v) {
+        estado.textContent = 'No existe esta combinación';
+        btn.disabled = true; btn.dataset.vid = '';
+        return;
+      }
+      precio.textContent = moneda(v.precio);
+      btn.dataset.vid = String(v.id);
+      if (v.stock <= 0) {
+        estado.innerHTML = '<span class="badge text-bg-secondary">Agotado</span>';
+        btn.disabled = true; inp.removeAttribute('max');
+      } else {
+        estado.textContent = 'Stock: ' + v.stock;
+        btn.disabled = false; inp.max = v.stock;
+        if (+inp.value > v.stock) inp.value = v.stock;
+      }
+      foto.src = v.img ? baseU + encodeURIComponent(v.img) : foto.dataset.orig;
+    }
+
+    sel.addEventListener('click', ev => {
+      const ch = ev.target.closest('.chip');
+      if (!ch) return;
+      st[+ch.dataset.dim] = ch.dataset.val;
+      pintar();
+    });
+    pintar();
+  });
+})();
+</script>
 
 <!-- Toast de confirmación -->
 <div class="position-fixed bottom-0 end-0 p-3" style="z-index:1080">

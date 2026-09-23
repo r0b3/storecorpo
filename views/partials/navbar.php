@@ -85,7 +85,6 @@ if (!empty($_SESSION['cart']) && is_array($_SESSION['cart'])) {
             </ul>
           </li>
 
-          <li class="nav-item"><a class="nav-link" href="<?= url('cart.php') ?>">Carrito</a></li>
         <?php endif; ?>
 
         <?php if ($u && ($esAdmin || $esBilling)): ?>
@@ -96,7 +95,7 @@ if (!empty($_SESSION['cart']) && is_array($_SESSION['cart'])) {
       </ul>
 
       <!-- Buscador -->
-      <form class="d-flex" role="search" method="get" action="<?= url('index.php') ?>">
+      <form class="d-none d-lg-flex" role="search" method="get" action="<?= url('index.php') ?>">
         <input class="form-control me-2" type="search" placeholder="Buscar" name="q" value="<?= isset($_GET['q']) ? e($_GET['q']) : '' ?>">
         <button class="btn btn-outline-light" type="submit">Buscar</button>
       </form>
@@ -117,7 +116,7 @@ if (!empty($_SESSION['cart']) && is_array($_SESSION['cart'])) {
       <!-- Usuario (SSO) + volver al panel + salir central + carrito -->
       <div class="ms-3 d-flex align-items-center gap-2">
         <?php if ($u): ?>
-          <span class="text-white-50 small d-none d-md-inline">Hola, <?= e($u['username'] ?? 'Usuario') ?></span>
+          <span class="text-white-50 small d-none d-xxl-inline text-nowrap">Hola, <?= e($u['username'] ?? 'Usuario') ?></span>
           <a class="btn btn-outline-light btn-sm" href="<?= e(sso_panel_url()) ?>/index.php">Panel</a>
           <a class="btn btn-outline-light btn-sm" href="<?= e(sso_logout_url()) ?>">Salir</a>
         <?php endif; ?>
