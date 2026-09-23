@@ -308,7 +308,7 @@ ob_start(); ?>
   <form class="card mb-3 filtros" method="get" action="<?= url('admin_dashboard.php') ?>" id="formFiltros">
     <div class="card-body py-2">
       <div class="row g-2 align-items-end">
-        <div class="col-6 col-md-3 col-xl-2">
+        <div class="col-6 col-md-4 col-xl">
           <label class="form-label">Periodo</label>
           <select class="form-select form-select-sm" name="rango" id="fRango">
             <?php foreach (RANGOS as $k => $v): ?>
@@ -316,15 +316,15 @@ ob_start(); ?>
             <?php endforeach; ?>
           </select>
         </div>
-        <div class="col-6 col-md-2 col-xl-2">
+        <div class="col-6 col-md-4 col-xl">
           <label class="form-label">Desde</label>
           <input type="date" class="form-control form-control-sm fecha" name="desde" value="<?= e($desde->format('Y-m-d')) ?>">
         </div>
-        <div class="col-6 col-md-2 col-xl-2">
+        <div class="col-6 col-md-4 col-xl">
           <label class="form-label">Hasta</label>
           <input type="date" class="form-control form-control-sm fecha" name="hasta" value="<?= e($hasta->format('Y-m-d')) ?>">
         </div>
-        <div class="col-6 col-md-2 col-xl-2">
+        <div class="col-6 col-md-4 col-xl">
           <label class="form-label">Método de pago</label>
           <select class="form-select form-select-sm auto" name="pm">
             <option value="">Todos</option>
@@ -333,7 +333,7 @@ ob_start(); ?>
             <?php endforeach; ?>
           </select>
         </div>
-        <div class="col-6 col-md-3 col-xl-2">
+        <div class="col-6 col-md-4 col-xl">
           <label class="form-label">Vendedor</label>
           <select class="form-select form-select-sm auto" name="vend">
             <option value="">Todos</option>
@@ -342,7 +342,7 @@ ob_start(); ?>
             <?php endforeach; ?>
           </select>
         </div>
-        <div class="col-6 col-md-3 col-xl-2">
+        <div class="col-6 col-md-4 col-xl">
           <label class="form-label">Categoría</label>
           <select class="form-select form-select-sm auto" name="cat">
             <option value="">Todas</option>
@@ -353,7 +353,7 @@ ob_start(); ?>
             <?php endforeach; ?>
           </select>
         </div>
-        <div class="col-12 col-md-auto d-flex gap-2 ms-md-auto">
+        <div class="col-12 col-xl-auto d-flex gap-2 justify-content-end">
           <button class="btn btn-primary btn-sm" type="submit">Aplicar</button>
           <?php if ($hayFiltros || $rango !== '30d'): ?>
             <a class="btn btn-outline-secondary btn-sm" href="<?= url('admin_dashboard.php') ?>">Limpiar</a>
@@ -468,7 +468,7 @@ ob_start(); ?>
             <?php foreach (METODOS as $k => $lab): $s = $porMetodo[$k]['s'] ?? 0; $n = $porMetodo[$k]['n'] ?? 0; ?>
               <div class="leyenda-fila">
                 <span class="punto" style="background: <?= $colorMet[$k] ?>"></span>
-                <span><?= e($lab) ?> <span class="text-muted small">· <?= $n ?> orden<?= $n === 1 ? '' : 'es' ?></span></span>
+                <span><?= e($lab) ?> <span class="text-muted small">· <?= $n ?> <?= $n === 1 ? 'orden' : 'órdenes' ?></span></span>
                 <span class="leyenda-monto">$<?= money($s) ?></span>
                 <span class="leyenda-pct"><?= pct($s, $totMet) ?></span>
               </div>
@@ -602,7 +602,9 @@ ob_start(); ?>
       const ctx = chart.ctx, meta = chart.getDatasetMeta(0);
       ctx.save(); ctx.fillStyle = INK2; ctx.font = '600 12px system-ui, -apple-system, "Segoe UI", sans-serif';
       ctx.textBaseline = 'middle';
-      meta.data.forEach((bar, i) => ctx.fillText($c(chart.data.datasets[0].data[i]), bar.x + 6, bar.y));
+      // Valor exacto: es la lectura precisa de la barra. El compacto ("$2 K")
+      // se queda para los ejes, donde solo hace falta orden de magnitud.
+      meta.data.forEach((bar, i) => ctx.fillText(moneda.format(chart.data.datasets[0].data[i]), bar.x + 6, bar.y));
       ctx.restore();
     }
   };
@@ -620,8 +622,12 @@ ob_start(); ?>
         datasets: [{
           data: D.serie.map(r => r.s),
           borderColor: S1, borderWidth: 2, borderJoinStyle: 'round', borderCapStyle: 'round',
-          backgroundColor: 'rgba(42,120,214,.10)', fill: true, tension: .25,
-          pointRadius: muchos ? 0 : 3, pointBackgroundColor: S1, pointBorderColor: '#fff', pointBorderWidth: 2,
+          // 'monotone' no sobrepasa los datos: con tensión libre la curva
+          // bajaba de cero antes de un salto y dibujaba ventas negativas.
+          backgroundColor: 'rgba(42,120,214,.10)', fill: true, cubicInterpolationMode: 'monotone',
+          // Punto solo en días con venta: treinta puntos sobre el cero son ruido.
+          pointRadius: ctx => (muchos || !ctx.raw) ? 0 : 4,
+          pointBackgroundColor: S1, pointBorderColor: '#fff', pointBorderWidth: 2,
           pointHoverRadius: 5, pointHoverBorderWidth: 2, pointHoverBorderColor: '#fff', pointHitRadius: 14,
         }]
       },
@@ -656,7 +662,7 @@ ob_start(); ?>
       },
       options: {
         indexAxis: 'y', maintainAspectRatio: false,
-        layout: { padding: { right: 64 } },
+        layout: { padding: { right: 96 } },
         plugins: {
           legend: { display: false },
           tooltip: { ...tooltip, displayColors: false, callbacks: {
