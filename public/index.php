@@ -285,6 +285,11 @@ ob_start(); ?>
               if ($o1n !== '' || $o1v !== '') $labelParts[] = ($o1n!==''?$o1n.': ':'').($o1v!==''?$o1v:'');
               if ($o2n !== '' || $o2v !== '') $labelParts[] = ($o2n!==''?$o2n.': ':'').($o2v!==''?$o2v:'');
               $label = implode(' / ', array_filter($labelParts, fn($x)=>trim($x) !== ''));
+              // En la tarjeta basta con los valores ("Amarilla · M"): los filtros de
+              // arriba ya nombran las dimensiones y la forma larga se partía en 3-4
+              // líneas. La forma larga queda en el title y en el carrito/recibo.
+              $corta = implode(' · ', array_filter([$o1v, $o2v], fn($x) => $x !== ''));
+              $agotada = ($stock !== null && $stock <= 0);
               $price = $v['price'] !== null ? (float)$v['price'] : (float)$p['base_price'];
               $stock = isset($v['stock']) ? (int)$v['stock'] : null;
             ?>
@@ -294,9 +299,9 @@ ob_start(); ?>
                        width="40" height="40" loading="lazy" onerror="this.remove()">
                 <?php endif; ?>
                 <div class="me-2 flex-grow-1">
-                  <div class="fw-semibold"><?= e($label ?: 'Variante') ?></div>
+                  <div class="fw-semibold" title="<?= e($label) ?>"><?= e($corta ?: ($label ?: 'Variante')) ?></div>
                   <div class="small text-muted">
-                    $<?= money($price) ?><?= ($stock!==null?' · Stock: '.(int)$stock:'') ?>
+                    $<?= money($price) ?><?php if ($agotada): ?> · <span class="badge text-bg-secondary">Agotado</span><?php else: ?><?= ($stock!==null?' · Stock: '.(int)$stock:'') ?><?php endif; ?>
                   </div>
                 </div>
                 <div class="d-flex align-items-center gap-1 qty-group">
@@ -308,7 +313,8 @@ ob_start(); ?>
                           data-target="#q_<?= $pid ?>_<?= $vid ?>" data-delta="+1" type="button">+</button>
                   <button class="btn btn-sm btn-primary ms-1 btn-add"
                           data-pid="<?= $pid ?>" data-vid="<?= $vid ?>"
-                          data-qref="#q_<?= $pid ?>_<?= $vid ?>" type="button">Agregar</button>
+                          data-qref="#q_<?= $pid ?>_<?= $vid ?>" type="button"
+                          <?= $agotada ? 'disabled title="Sin stock"' : '' ?>>Agregar</button>
                 </div>
               </div>
             <?php endforeach; ?>
