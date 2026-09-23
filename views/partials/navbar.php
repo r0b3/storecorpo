@@ -89,6 +89,7 @@ if (!empty($_SESSION['cart']) && is_array($_SESSION['cart'])) {
         <?php endif; ?>
 
         <?php if ($u && ($esAdmin || $esBilling)): ?>
+          <li class="nav-item"><a class="nav-link" href="<?= url('admin_dashboard.php') ?>">Indicadores</a></li>
           <li class="nav-item"><a class="nav-link" href="<?= url('admin_sales.php') ?>">Ventas</a></li>
           <li class="nav-item"><a class="nav-link" href="<?= url('admin_sales_report.php') ?>">Consolidado</a></li>
         <?php endif; ?>
