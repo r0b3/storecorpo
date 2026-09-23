@@ -18,7 +18,13 @@ $urole = strtolower($u['role'] ?? '');
   <link rel="icon" type="image/svg+xml" href="<?= url('favicon.svg') ?>">
   <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
   <!-- Vidrio de la tienda: reglas propias sobre los tokens --gl-* del SSO. -->
-  <link href="<?= url('assets/tienda.css') ?>" rel="stylesheet">
+  <?php
+    // La fecha del archivo en la URL: cada despliegue cambia la URL y el
+    // navegador no sigue usando la hoja vieja de su caché (pasaba: reglas
+    // nuevas que "no se aplicaban" hasta un Ctrl+F5).
+    $tiendaCssV = @filemtime(__DIR__ . '/../../public/assets/tienda.css') ?: 1;
+  ?>
+  <link href="<?= url('assets/tienda.css') ?>?v=<?= (int)$tiendaCssV ?>" rel="stylesheet">
   <!-- Tokens publicados por el diseñador de Estilos del panel. Va DESPUÉS de
        tienda.css a propósito: lo publicado pisa los valores por defecto. -->
   <style><?= sso_tema_css('store') ?></style>

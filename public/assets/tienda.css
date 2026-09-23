@@ -175,9 +175,13 @@ footer.bg-white {
     border-top: 1px solid var(--gl-borde);
 }
 
-/* La imagen del producto queda sobre el vidrio de su card. */
+/* La imagen del producto queda sobre el vidrio de su card. Cuadrada y
+   recortada al centro: las fotos verticales del celular estiraban la
+   tarjeta a casi 900 px y descuadraban la cuadrícula del catálogo. */
 .card-img-top {
     background-color: rgba(var(--gl-tinte), var(--gl-op));
+    aspect-ratio: 1 / 1;
+    object-fit: cover;
 }
 
 .brand-logo {

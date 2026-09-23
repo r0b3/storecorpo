@@ -127,7 +127,19 @@ foreach ([1, 2] as $n) {
   )->fetchAll(PDO::FETCH_ASSOC);
   foreach ($rows as $r) { $facetas[$r['nombre']][$r['valor']] = true; }
 }
-foreach ($facetas as $n => $vals) { $facetas[$n] = array_keys($vals); }
+// Tallas por tamaño (M, L, XL), no alfabético (L, M, XL); el resto, natural.
+$ordenTalla = array_flip(['XXS','XS','S','M','L','XL','XXL','XXXL']);
+foreach ($facetas as $n => $vals) {
+  $lista = array_keys($vals);
+  usort($lista, function ($a, $b) use ($ordenTalla) {
+    $ra = $ordenTalla[strtoupper($a)] ?? null; $rb = $ordenTalla[strtoupper($b)] ?? null;
+    if ($ra !== null && $rb !== null) return $ra <=> $rb;
+    if ($ra !== null) return -1;
+    if ($rb !== null) return 1;
+    return strnatcasecmp($a, $b);
+  });
+  $facetas[$n] = $lista;
+}
 
 // Padres y, si hay uno seleccionado, sus hijas (para la segunda fila de píldoras).
 $padres = array_values(array_filter($cats, fn($c) => empty($c['parent_id'])));
@@ -279,7 +291,7 @@ ob_start(); ?>
               <div class="list-group-item d-flex align-items-center justify-content-between linea-compra">
                 <?php if (!empty($v['image'])): ?>
                   <img src="<?= url('uploads/' . $v['image']) ?>" alt="" class="var-mini me-2"
-                       loading="lazy" onerror="this.remove()">
+                       width="40" height="40" loading="lazy" onerror="this.remove()">
                 <?php endif; ?>
                 <div class="me-2 flex-grow-1">
                   <div class="fw-semibold"><?= e($label ?: 'Variante') ?></div>
