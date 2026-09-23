@@ -20,7 +20,7 @@ error_reporting(E_ALL);
       <?php foreach (($products??[]) as $p): ?>
         <div class="col-sm-6 col-md-4">
           <div class="card h-100 shadow-sm">
-            <img src="<?= url('uploads/' . ($p['image'] ?: 'placeholder.png')) ?>" class="card-img-top" alt="<?= e($p['name']) ?>" onerror="this.src='<?= url('uploads/placeholder.png') ?>'">
+            <img src="<?= e(url('uploads/' . ($p['image'] ?: 'placeholder.png'))) ?>" class="card-img-top" alt="<?= e($p['name']) ?>" onerror="this.src='<?= url('uploads/placeholder.png') ?>'">
             <div class="card-body d-flex flex-column">
               <h5 class="card-title"><?= e($p['name']) ?></h5>
               <p class="card-text small text-muted mb-1"><?= e($p['category'] ?? 'Sin categoría') ?></p>

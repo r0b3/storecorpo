@@ -241,7 +241,7 @@ ob_start(); ?>
 ?>
   <div class="col-12 col-md-6 col-lg-4">
     <div class="card h-100 shadow-sm">
-      <img src="<?= url('uploads/' . $img) ?>" class="card-img-top"
+      <img src="<?= e(url('uploads/' . $img)) ?>" class="card-img-top"
            onerror="this.src='<?= url('uploads/placeholder.png') ?>'">
       <div class="card-body d-flex flex-column">
         <h5 class="card-title mb-1"><?= e($p['name']) ?></h5>
@@ -297,7 +297,7 @@ ob_start(); ?>
             ?>
               <div class="list-group-item d-flex align-items-center justify-content-between linea-compra">
                 <?php if (!empty($v['image'])): ?>
-                  <img src="<?= url('uploads/' . $v['image']) ?>" alt="" class="var-mini me-2"
+                  <img src="<?= e(url('uploads/' . $v['image'])) ?>" alt="" class="var-mini me-2"
                        width="40" height="40" loading="lazy" onerror="this.remove()">
                 <?php endif; ?>
                 <div class="me-2 flex-grow-1">

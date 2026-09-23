@@ -43,7 +43,7 @@ error_reporting(E_ALL);
             <td>
               <div class="d-flex align-items-center gap-2">
                 <img
-                  src="<?= url('uploads/' . $img) ?>"
+                  src="<?= e(url('uploads/' . $img)) ?>"
                   width="48" height="48" class="rounded"
                   onerror="this.src='<?= url('uploads/placeholder.png') ?>'">
                 <div>

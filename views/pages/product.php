@@ -6,7 +6,7 @@ error_reporting(E_ALL);
  // views/pages/product.php ?>
 <div class="row">
   <div class="col-md-6">
-    <img class="img-fluid rounded shadow-sm" src="<?= url('uploads/' . ($p['image'] ?: 'placeholder.png')) ?>" alt="<?= e($p['name']) ?>" onerror="this.src='<?= url('uploads/placeholder.png') ?>'">
+    <img class="img-fluid rounded shadow-sm" src="<?= e(url('uploads/' . ($p['image'] ?: 'placeholder.png'))) ?>" alt="<?= e($p['name']) ?>" onerror="this.src='<?= url('uploads/placeholder.png') ?>'">
   </div>
   <div class="col-md-6">
     <h1 class="h3"><?= e($p['name']) ?></h1>

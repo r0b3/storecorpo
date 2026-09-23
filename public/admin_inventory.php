@@ -412,7 +412,7 @@ if ($msg !== '') {
             <td>
   <div class="d-flex align-items-center gap-2">
     <?php if (!empty($p['image'])): ?>
-      <img src="<?= url('uploads/' . $p['image']) ?>" alt=""
+      <img src="<?= e(url('uploads/' . $p['image'])) ?>" alt=""
            class="rounded border" style="width:48px;height:48px;object-fit:cover"
            onerror="this.style.display='none'">
     <?php endif; ?>
@@ -736,7 +736,7 @@ variantsModal.addEventListener('show.bs.modal', function (ev) {
   <td class="text-end">${v.price !== null ? '$'+Number(v.price).toLocaleString('es-CO') : '—'}</td>
   <td>${(parseInt(v.active,10) ? 'Sí' : 'No')}</td>
   <td class="text-end">
-    ${v.image ? `<img src="<?= url('uploads/') ?>${v.image}" alt="" class="rounded me-2" style="height:34px;object-fit:cover" onerror="this.style.display='none'">` : ''}
+    ${v.image ? `<img src="<?= url('uploads/') ?>${encodeURIComponent(v.image)}" alt="" class="rounded me-2" style="height:34px;object-fit:cover" onerror="this.style.display='none'">` : ''}
     <button class="btn btn-sm btn-outline-primary me-1" type="button"
       onclick="editVariant(${pid}, ${v.id})">Editar</button>
     <form class="d-inline" method="post" action="<?= url('admin_inventory.php') ?>" onsubmit="return confirm('¿Eliminar variante?')">
@@ -773,7 +773,7 @@ function editVariant(pid, vid) {
   const prev = document.getElementById('v_img_preview');
   if (prev) {
     prev.innerHTML = v.image
-      ? `<img src="<?= url('uploads/') ?>${v.image}" class="rounded border" style="max-height:80px;object-fit:cover" onerror="this.style.display='none'">`
+      ? `<img src="<?= url('uploads/') ?>${encodeURIComponent(v.image)}" class="rounded border" style="max-height:80px;object-fit:cover" onerror="this.style.display='none'">`
       : `<span class="text-muted small">Sin imagen</span>`;
   }
 }
@@ -793,7 +793,7 @@ editModal.addEventListener('show.bs.modal', function (ev) {
   const box = document.getElementById('edit_img_preview');
   if (box) {
     box.innerHTML = img
-      ? `<img src="<?= url('uploads/') ?>${img}" alt="" class="rounded border" style="max-height:80px"
+      ? `<img src="<?= url('uploads/') ?>${encodeURIComponent(img)}" alt="" class="rounded border" style="max-height:80px"
              onerror="this.src='<?= url('uploads/placeholder.png') ?>'">`
       : `<span class="text-muted small">Sin imagen actual</span>`;
   }
