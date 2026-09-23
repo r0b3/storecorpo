@@ -119,6 +119,12 @@ CREATE TABLE IF NOT EXISTS `orders` (
   `cancelled_by`     INT UNSIGNED DEFAULT NULL,
   `paid_at`          DATETIME     DEFAULT NULL,   -- cuándo se dio por cobrada
   `paid_by`          INT(11)      DEFAULT NULL,   -- id del usuario SSO que la cobró
+  -- Comprobante del cobro. Aparte de payment_ref, que es la referencia
+  -- capturada en el checkout: son dos momentos distintos del mismo pago.
+  `paid_ref`         VARCHAR(120) DEFAULT NULL,
+  `notas`            TEXT         DEFAULT NULL,   -- observación libre sobre la venta
+  `notas_at`         DATETIME     DEFAULT NULL,
+  `notas_by`         INT(11)      DEFAULT NULL
   PRIMARY KEY (`id`),
   KEY `ix_orders_user` (`user_id`),
   KEY `ix_orders_status` (`status`),

@@ -35,6 +35,50 @@ function pick(array $row, array $cands, $default=null) {
   return $default;
 }
 
+/* === Observación / nota de la venta (POST) ========================== */
+// Se permite también en anuladas: muchas veces la nota explica justamente por
+// qué se anuló. El rol ya está exigido arriba (Admin/Billing).
+if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST' && ($_POST['action'] ?? '') === 'save_note') {
+  ensure_csrf();
+  $oid = (int)($_POST['order_id'] ?? 0);
+  if ($oid <= 0) { redirect('admin_sales.php?ok=0&msg=' . urlencode('ID de venta inválido')); }
+
+  $pdo = get_pdo();
+  $ordersT = table_exists($pdo,'orders') ? 'orders' : (table_exists($pdo,'sales') ? 'sales' : null);
+  if (!$ordersT || !has_column($pdo, $ordersT, 'notas')) {
+    redirect('admin_sales.php?ok=0&msg=' . urlencode('Esta instalación no tiene columna de notas.'));
+  }
+
+  try {
+    $texto = trim((string)($_POST['notas'] ?? ''));
+    $texto = mb_substr($texto, 0, 1000);
+
+    $u   = function_exists('auth_user') ? auth_user() : null;
+    $uid = $u['id'] ?? null;
+
+    // Vaciar el campo borra la nota: guardar '' dejaría una observación en
+    // blanco que en la vista se ve como un recuadro vacío.
+    $set = "notas = :n";
+    $params = [':n' => ($texto !== '' ? $texto : null), ':id' => $oid];
+    if (has_column($pdo, $ordersT, 'notas_at')) { $set .= ", notas_at = NOW()"; }
+    if (has_column($pdo, $ordersT, 'notas_by') && $uid) { $set .= ", notas_by = :uid"; $params[':uid'] = $uid; }
+
+    $st = $pdo->prepare("UPDATE {$ordersT} SET {$set} WHERE id = :id");
+    $st->execute($params);
+    if ($st->rowCount() === 0) {
+      $chk = $pdo->prepare("SELECT 1 FROM {$ordersT} WHERE id = :id");
+      $chk->execute([':id'=>$oid]);
+      if (!$chk->fetchColumn()) { throw new RuntimeException('Venta no encontrada.'); }
+    }
+
+    redirect('admin_sales.php?ok=1&msg=' . urlencode($texto !== '' ? 'Observación guardada.' : 'Observación eliminada.'));
+  } catch (Throwable $e) {
+    error_log('[save_note] ' . $e->getMessage());
+    redirect('admin_sales.php?ok=0&msg=' . urlencode($e->getMessage()));
+  }
+}
+/* === /Observación ================================================== */
+
 /* === Marcar venta como pagada (POST) ================================ */
 // El rol ya está exigido arriba (Admin/Billing) antes de cualquier manejador.
 if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST' && ($_POST['action'] ?? '') === 'mark_paid') {
@@ -63,10 +107,19 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST' && ($_POST['action'] ?? '')
     $u   = function_exists('auth_user') ? auth_user() : null;
     $uid = $u['id'] ?? null;
 
+    // El comprobante es opcional: a veces se cobra en efectivo y no hay papel.
+    // Se guarda aparte de payment_ref, que es la referencia capturada en el
+    // checkout: son dos momentos distintos y perder uno para poner el otro
+    // borraría información.
+    $paidRef = trim((string)($_POST['paid_ref'] ?? ''));
+
     $set = "status='paid'";
     $params = [':id'=>$oid];
     if (has_column($pdo, $ordersT, 'paid_at')) { $set .= ", paid_at = NOW()"; }
     if (has_column($pdo, $ordersT, 'paid_by') && $uid) { $set .= ", paid_by = :uid"; $params[':uid'] = $uid; }
+    if ($paidRef !== '' && has_column($pdo, $ordersT, 'paid_ref')) {
+      $set .= ", paid_ref = :ref"; $params[':ref'] = mb_substr($paidRef, 0, 120);
+    }
     $pdo->prepare("UPDATE {$ordersT} SET {$set} WHERE id = :id")->execute($params);
 
     $pdo->commit();
@@ -368,6 +421,10 @@ ob_start(); ?>
           <?php
   $status = (string)($o['status'] ?? '');
   $s = strtolower($status);
+  $notas    = trim((string)($o['notas'] ?? ''));
+  $notasAt  = trim((string)($o['notas_at'] ?? ''));
+  $paidRef  = trim((string)($o['paid_ref'] ?? ''));
+  $payRef   = trim((string)pick($o, ['payment_ref'], ''));
   if ($s === 'cancelled') {
     $statusBadge = 'text-bg-danger';
     $statusLabel = 'Anulada';
@@ -411,8 +468,23 @@ ob_start(); ?>
               <div>Subtotal: $<?= money($subtotal) ?></div>
               <div>Impuesto: $<?= money($tax) ?></div>
               <div class="fw-semibold">Total: $<?= money($total) ?></div>
+              <?php if ($payRef !== ''): ?>
+                <div class="small text-muted mt-1">Ref. de pago: <?= e($payRef) ?></div>
+              <?php endif; ?>
+              <?php if ($paidRef !== ''): ?>
+                <div class="small text-muted">N° de comprobante: <strong><?= e($paidRef) ?></strong></div>
+              <?php endif; ?>
             </div>
           </div>
+
+          <?php if ($notas !== ''): ?>
+            <div class="alert alert-light border mt-3 mb-0 py-2 px-3">
+              <div class="small text-muted mb-1">
+                Observación<?= $notasAt !== '' ? ' · ' . e($notasAt) : '' ?>
+              </div>
+              <div><?= nl2br(e($notas)) ?></div>
+            </div>
+          <?php endif; ?>
 
           <?php if ($items): ?>
             <hr>
@@ -461,7 +533,8 @@ ob_start(); ?>
           <?php endif; ?>
         </div>
 
-        <div class="card-footer d-flex justify-content-end gap-2">
+        <div class="card-footer">
+          <div class="d-flex justify-content-end gap-2 flex-wrap">
           <!-- Copiar resumen -->
           <button class="btn btn-outline-secondary btn-sm"
                   onclick="navigator.clipboard.writeText(this.dataset.copy);this.textContent='Copiado';setTimeout(()=>this.textContent='Copiar datos',1500)"
@@ -470,14 +543,16 @@ ob_start(); ?>
           </button>
 
           <?php if ($s === 'pending'): ?>
-            <form class="d-inline" method="post" action="<?= url('admin_sales.php') ?>"
-                  onsubmit="return confirm('¿Confirmas que esta venta ya fue cobrada?');">
-              <?= csrf_field() ?>
-              <input type="hidden" name="action" value="mark_paid">
-              <input type="hidden" name="order_id" value="<?= (int)$oid ?>">
-              <button class="btn btn-outline-success btn-sm" type="submit">Marcar como pagada</button>
-            </form>
+            <button class="btn btn-outline-success btn-sm" type="button"
+                    data-bs-toggle="collapse" data-bs-target="#pagar_<?= (int)$oid ?>">
+              Marcar como pagada
+            </button>
           <?php endif; ?>
+
+          <button class="btn btn-outline-secondary btn-sm" type="button"
+                  data-bs-toggle="collapse" data-bs-target="#nota_<?= (int)$oid ?>">
+            <?= $notas !== '' ? 'Editar observación' : 'Agregar observación' ?>
+          </button>
 
           <?php if ($status !== 'cancelled'): ?>
             <form class="d-inline" method="post" action="<?= url('admin_sales.php') ?>"
@@ -490,6 +565,40 @@ ob_start(); ?>
           <?php else: ?>
             <span class="badge text-bg-danger">Anulada</span>
           <?php endif; ?>
+          </div>
+
+          <?php if ($s === 'pending'): ?>
+            <div class="collapse mt-2" id="pagar_<?= (int)$oid ?>">
+              <form method="post" action="<?= url('admin_sales.php') ?>" class="border rounded p-2">
+                <?= csrf_field() ?>
+                <input type="hidden" name="action" value="mark_paid">
+                <input type="hidden" name="order_id" value="<?= (int)$oid ?>">
+                <label class="form-label small mb-1">
+                  N.° de comprobante <span class="text-muted">(opcional)</span>
+                </label>
+                <div class="d-flex gap-2 flex-wrap">
+                  <input class="form-control form-control-sm" name="paid_ref" maxlength="120"
+                         style="max-width:320px"
+                         placeholder="Consignación, recibo, transferencia…">
+                  <button class="btn btn-success btn-sm" type="submit">Confirmar cobro</button>
+                </div>
+              </form>
+            </div>
+          <?php endif; ?>
+
+          <div class="collapse mt-2" id="nota_<?= (int)$oid ?>">
+            <form method="post" action="<?= url('admin_sales.php') ?>" class="border rounded p-2">
+              <?= csrf_field() ?>
+              <input type="hidden" name="action" value="save_note">
+              <input type="hidden" name="order_id" value="<?= (int)$oid ?>">
+              <label class="form-label small mb-1">
+                Observación <span class="text-muted">(vaciar el campo la elimina)</span>
+              </label>
+              <textarea class="form-control form-control-sm" name="notas" rows="2"
+                        maxlength="1000"><?= e($notas) ?></textarea>
+              <button class="btn btn-primary btn-sm mt-2" type="submit">Guardar observación</button>
+            </form>
+          </div>
         </div>
 
       </div>
