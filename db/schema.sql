@@ -124,7 +124,7 @@ CREATE TABLE IF NOT EXISTS `orders` (
   `paid_ref`         VARCHAR(120) DEFAULT NULL,
   `notas`            TEXT         DEFAULT NULL,   -- observación libre sobre la venta
   `notas_at`         DATETIME     DEFAULT NULL,
-  `notas_by`         INT(11)      DEFAULT NULL
+  `notas_by`         INT(11)      DEFAULT NULL,
   PRIMARY KEY (`id`),
   KEY `ix_orders_user` (`user_id`),
   KEY `ix_orders_status` (`status`),
