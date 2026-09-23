@@ -88,6 +88,7 @@ CREATE TABLE IF NOT EXISTS `product_variants` (
   `option1_value` VARCHAR(120) DEFAULT NULL,
   `option2_name`  VARCHAR(60)  DEFAULT NULL,
   `option2_value` VARCHAR(120) DEFAULT NULL,
+  `image`         VARCHAR(255) DEFAULT NULL,   -- foto propia (p. ej. el color); si falta, la del producto
   PRIMARY KEY (`id`),
   KEY `ix_variants_product` (`product_id`),
   KEY `ix_variants_sku` (`sku`),

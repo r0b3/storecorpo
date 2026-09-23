@@ -92,7 +92,8 @@ function cart_add(PDO $pdo, int $pid, ?int $vid, int $qty): void {
   if ($vid) {
     $sv = $pdo->prepare("SELECT id, sku, price, stock, active,
                                 option1_name, option1_value,
-                                option2_name, option2_value
+                                option2_name, option2_value"
+                       . (has_column($pdo, 'product_variants', 'image') ? ", image" : "") . "
                          FROM product_variants
                          WHERE id=:vid AND product_id=:pid");
     $sv->execute([':vid'=>$vid, ':pid'=>$pid]);
@@ -102,6 +103,8 @@ function cart_add(PDO $pdo, int $pid, ?int $vid, int $qty): void {
 
     if ($v['price'] !== null) $price = (float)$v['price'];
     $sku = $v['sku'] ?: null;
+    // La foto de la variante (el color concreto) manda sobre la del producto.
+    if (!empty($v['image'])) $image = $v['image'];
 
     $parts = [];
     $o1n = trim((string)($v['option1_name'] ?? '')); $o1v = trim((string)($v['option1_value'] ?? ''));

@@ -173,8 +173,13 @@ foreach (agrupar($pdo, "SELECT o.payment_method AS m, SUM(i.line_total) AS s, CO
 }
 
 // Top productos: ocho y el resto a "Otros", nunca más barras que eso.
-$prods = agrupar($pdo, "SELECT i.product_name AS nombre, SUM(i.quantity) AS q, SUM(i.line_total) AS s
-                          {$FROM} WHERE {$W} AND {$vivas} GROUP BY i.product_name ORDER BY s DESC", $P);
+// Agrupado por el producto ACTUAL, no por el nombre guardado en la venta:
+// las líneas conservan el nombre con el que se vendieron ("CAMISETA AMARILLA
+// TALLA M") y agrupar por él partiría Camiseta en una fila por color y talla.
+$prods = agrupar($pdo, "SELECT COALESCE(p.name, i.product_name) AS nombre, SUM(i.quantity) AS q, SUM(i.line_total) AS s
+                          {$FROM} WHERE {$W} AND {$vivas}
+                          GROUP BY COALESCE(CAST(p.id AS CHAR), CONCAT('n:', i.product_name)), nombre
+                          ORDER BY s DESC", $P);
 $topProd = array_slice($prods, 0, 8);
 if (count($prods) > 8) {
   $resto = array_slice($prods, 8);

@@ -97,7 +97,12 @@ if ($products) {
            FROM product_variants v
            WHERE v.product_id IN ($in)
              AND (v.active = 1 OR v.active IS NULL)
-           ORDER BY v.product_id, v.id";
+           ORDER BY v.product_id, v.option1_value,
+                    -- Tallas en orden de tamaño, no alfabético (L antes que M)
+                    -- ni de creación. Valores desconocidos van al final.
+                    FIELD(UPPER(v.option2_value), 'XXS','XS','S','M','L','XL','XXL','XXXL') = 0,
+                    FIELD(UPPER(v.option2_value), 'XXS','XS','S','M','L','XL','XXL','XXXL'),
+                    v.option2_value, v.id";
   $sv = $pdo->prepare($sqlV);
   $sv->execute($ids);
   foreach ($sv->fetchAll(PDO::FETCH_ASSOC) as $v) {
@@ -210,7 +215,15 @@ ob_start(); ?>
 <div class="row g-3">
 <?php foreach ($products as $p):
   $pid   = (int)$p['id'];
-  $img   = $p['image'] ?? 'placeholder.png';
+  // Sin foto de producto, la de su primera variante con foto: tras unificar
+  // colores en un producto, las fotos quedaron en las variantes.
+  $img   = $p['image'] ?? null;
+  if (!$img) {
+    foreach ($variantsByProduct[(int)$p['id']] ?? [] as $vv) {
+      if (!empty($vv['image'])) { $img = $vv['image']; break; }
+    }
+  }
+  $img   = $img ?: 'placeholder.png';
   $desc  = (string)($p['description'] ?? '');
   $vlist = $variantsByProduct[$pid] ?? [];
 ?>
@@ -264,7 +277,11 @@ ob_start(); ?>
               $stock = isset($v['stock']) ? (int)$v['stock'] : null;
             ?>
               <div class="list-group-item d-flex align-items-center justify-content-between linea-compra">
-                <div class="me-2">
+                <?php if (!empty($v['image'])): ?>
+                  <img src="<?= url('uploads/' . $v['image']) ?>" alt="" class="var-mini me-2"
+                       loading="lazy" onerror="this.remove()">
+                <?php endif; ?>
+                <div class="me-2 flex-grow-1">
                   <div class="fw-semibold"><?= e($label ?: 'Variante') ?></div>
                   <div class="small text-muted">
                     $<?= money($price) ?><?= ($stock!==null?' · Stock: '.(int)$stock:'') ?>
