@@ -289,9 +289,11 @@ ob_start(); ?>
               // arriba ya nombran las dimensiones y la forma larga se partía en 3-4
               // líneas. La forma larga queda en el title y en el carrito/recibo.
               $corta = implode(' · ', array_filter([$o1v, $o2v], fn($x) => $x !== ''));
-              $agotada = ($stock !== null && $stock <= 0);
               $price = $v['price'] !== null ? (float)$v['price'] : (float)$p['base_price'];
               $stock = isset($v['stock']) ? (int)$v['stock'] : null;
+              // Después de $stock, no antes: calculado arriba usaba el stock de
+              // la fila ANTERIOR y marcaba agotada la variante equivocada.
+              $agotada = ($stock !== null && $stock <= 0);
             ?>
               <div class="list-group-item d-flex align-items-center justify-content-between linea-compra">
                 <?php if (!empty($v['image'])): ?>
