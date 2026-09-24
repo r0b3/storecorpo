@@ -4,7 +4,8 @@
 // La tabla de hechos es order_items unida a orders: como la tienda fuerza
 // tax = 0, orders.total es exactamente la suma de line_total, y trabajar a
 // nivel de línea permite filtrar por categoría sin cuadrar dos fuentes.
-// Todo lo que suma ventas excluye las anuladas; las anuladas se cuentan aparte.
+// Todo lo que suma ventas excluye las anuladas y los obsequios (salió producto
+// pero no entró dinero); ambos se cuentan aparte.
 ini_set('log_errors', '1');
 error_reporting(E_ALL);
 
@@ -125,13 +126,15 @@ function kpis(PDO $pdo, string $FROM, array $wp): array {
   [$w, $p] = $wp;
   $st = $pdo->prepare(
     "SELECT
-       COALESCE(SUM(CASE WHEN o.status <> 'cancelled' THEN i.line_total END), 0) AS ventas,
-       COUNT(DISTINCT CASE WHEN o.status <> 'cancelled' THEN o.id END)           AS ordenes,
-       COALESCE(SUM(CASE WHEN o.status <> 'cancelled' THEN i.quantity END), 0)   AS unidades,
+       COALESCE(SUM(CASE WHEN o.status NOT IN ('cancelled','gift') THEN i.line_total END), 0) AS ventas,
+       COUNT(DISTINCT CASE WHEN o.status NOT IN ('cancelled','gift') THEN o.id END)           AS ordenes,
+       COALESCE(SUM(CASE WHEN o.status NOT IN ('cancelled','gift') THEN i.quantity END), 0)   AS unidades,
        COALESCE(SUM(CASE WHEN o.status = 'paid'    THEN i.line_total END), 0)    AS cobrado,
        COALESCE(SUM(CASE WHEN o.status = 'pending' THEN i.line_total END), 0)    AS por_cobrar,
        COUNT(DISTINCT CASE WHEN o.status = 'cancelled' THEN o.id END)            AS anuladas,
-       COALESCE(SUM(CASE WHEN o.status = 'cancelled' THEN i.line_total END), 0)  AS anulado
+       COALESCE(SUM(CASE WHEN o.status = 'cancelled' THEN i.line_total END), 0)  AS anulado,
+       COUNT(DISTINCT CASE WHEN o.status = 'gift' THEN o.id END)                 AS obsequios,
+       COALESCE(SUM(CASE WHEN o.status = 'gift' THEN i.line_total END), 0)       AS obsequiado
      {$FROM} WHERE {$w}"
   );
   $st->execute($p);
@@ -151,7 +154,7 @@ $wpPrev = where_rango($prevDesde, $prevHasta, $pm, $vend, $cat, $tienePadre);
 $K  = kpis($pdo, $FROM, $wpAct);
 $KP = kpis($pdo, $FROM, $wpPrev);
 [$W, $P] = $wpAct;
-$vivas = "o.status <> 'cancelled'";
+$vivas = "o.status NOT IN ('cancelled','gift')";
 
 // Serie diaria, rellenando los días sin ventas con 0: un hueco en la línea se
 // leería como "sin dato", no como "cero".
@@ -391,6 +394,12 @@ ob_start(); ?>
                 · <a href="<?= url('admin_sales.php') ?>">ver pendientes</a>
               <?php endif; ?>
             </div>
+            <?php if ($K['obsequios'] > 0): ?>
+              <div class="kpi-sub mt-1">
+                Obsequios <strong><?= number_format($K['obsequios'], 0, ',', '.') ?></strong>
+                · $<?= money($K['obsequiado']) ?> <span class="text-muted">(no suman)</span>
+              </div>
+            <?php endif; ?>
           </div>
         </div>
       </div>
@@ -429,7 +438,7 @@ ob_start(); ?>
       <div class="card h-100">
         <div class="card-body">
           <p class="card-title-sm">Ventas por día</p>
-          <div class="card-sub mb-2">Total vendido cada día, sin anuladas</div>
+          <div class="card-sub mb-2">Total vendido cada día, sin anuladas ni obsequios</div>
           <?php if ($K['ventas'] > 0): ?>
             <div class="lienzo alto"><canvas id="gDia" aria-label="Ventas por día" role="img"></canvas></div>
           <?php else: ?>

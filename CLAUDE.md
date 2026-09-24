@@ -154,7 +154,9 @@ de asumirla, o romperás instalaciones con esquema distinto.
 4. `admin_sales.php` (Admin/Billing) permite **anular**: `SELECT … FOR UPDATE`, devuelve
    el stock, marca `status='cancelled'` y registra `cancelled_at`/`cancelled_by` si esas
    columnas existen.
-5. `admin_sales_report.php` consolida: **excluye las anuladas de los totales** pero las
+5. Una venta **pendiente** puede darse como **obsequio** (`status='gift'`, `gift_at/by/note`)
+   desde `admin_sales.php`: el stock NO se devuelve, pero sale de los totales.
+6. `admin_sales_report.php` consolida: **excluye anuladas y obsequios de los totales** (obsequios en tarjeta aparte) pero las
    incluye en el listado de órdenes.
 
 `admin_inventory.php` (solo Admin) hace el CRUD de productos y variantes; las imágenes

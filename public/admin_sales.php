@@ -34,6 +34,14 @@ function pick(array $row, array $cands, $default=null) {
   }
   return $default;
 }
+/** ¿El ENUM de status acepta este valor? Sin la migración, escribir 'gift'
+ *  fallaría (modo estricto) o guardaría '' (no estricto): mejor avisar. */
+function status_admite(PDO $pdo, string $table, string $valor): bool {
+  $st = $pdo->prepare("SELECT COLUMN_TYPE FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = :t AND COLUMN_NAME = 'status'");
+  $st->execute([':t'=>$table]);
+  $tipo = (string)$st->fetchColumn();
+  return stripos($tipo, 'enum(') !== 0 || stripos($tipo, "'" . $valor . "'") !== false;
+}
 
 /* === Observación / nota de la venta (POST) ========================== */
 // Se permite también en anuladas: muchas veces la nota explica justamente por
@@ -131,6 +139,55 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST' && ($_POST['action'] ?? '')
   }
 }
 /* === /Marcar como pagada =========================================== */
+
+/* === Dar como obsequio (POST) ======================================= */
+// Solo desde pendiente: una venta ya cobrada no se regala después, y una
+// anulada ya devolvió su stock. El stock NO se restituye (el producto sí
+// salió del stand); lo único que cambia es que deja de contar como venta.
+if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST' && ($_POST['action'] ?? '') === 'mark_gift') {
+  ensure_csrf();
+  $oid = (int)($_POST['order_id'] ?? 0);
+  if ($oid <= 0) { redirect('admin_sales.php?ok=0&msg=' . urlencode('ID de venta inválido')); }
+
+  $pdo = get_pdo();
+  $ordersT = table_exists($pdo,'orders') ? 'orders' : (table_exists($pdo,'sales') ? 'sales' : null);
+  if (!$ordersT || !status_admite($pdo, $ordersT, 'gift')) {
+    redirect('admin_sales.php?ok=0&msg=' . urlencode('Esta instalación no admite el estado obsequio.'));
+  }
+
+  try {
+    $pdo->beginTransaction();
+
+    $st = $pdo->prepare("SELECT id, status FROM {$ordersT} WHERE id=:id FOR UPDATE");
+    $st->execute([':id'=>$oid]);
+    $order = $st->fetch(PDO::FETCH_ASSOC);
+    if (!$order) { throw new RuntimeException('Venta no encontrada.'); }
+    if (strtolower((string)$order['status']) !== 'pending') {
+      throw new RuntimeException('Solo una venta pendiente se puede dar como obsequio.');
+    }
+
+    $u   = function_exists('auth_user') ? auth_user() : null;
+    $uid = $u['id'] ?? null;
+    $motivo = trim((string)($_POST['gift_note'] ?? ''));
+
+    $set = "status='gift'";
+    $params = [':id'=>$oid];
+    if (has_column($pdo, $ordersT, 'gift_at')) { $set .= ", gift_at = NOW()"; }
+    if (has_column($pdo, $ordersT, 'gift_by') && $uid) { $set .= ", gift_by = :uid"; $params[':uid'] = $uid; }
+    if ($motivo !== '' && has_column($pdo, $ordersT, 'gift_note')) {
+      $set .= ", gift_note = :gn"; $params[':gn'] = mb_substr($motivo, 0, 255);
+    }
+    $pdo->prepare("UPDATE {$ordersT} SET {$set} WHERE id = :id")->execute($params);
+
+    $pdo->commit();
+    redirect('admin_sales.php?ok=1&msg=' . urlencode('Venta registrada como obsequio: ya no suma en el consolidado.'));
+  } catch (Throwable $e) {
+    if ($pdo->inTransaction()) $pdo->rollBack();
+    error_log('[mark_gift] ' . $e->getMessage());
+    redirect('admin_sales.php?ok=0&msg=' . urlencode($e->getMessage()));
+  }
+}
+/* === /Obsequio ===================================================== */
 
 /* === Reversión de venta (POST) ====================================== */
 if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST' && ($_POST['action'] ?? '') === 'reverse') {
@@ -425,6 +482,7 @@ ob_start(); ?>
   $notasAt  = trim((string)($o['notas_at'] ?? ''));
   $paidRef  = trim((string)($o['paid_ref'] ?? ''));
   $payRef   = trim((string)pick($o, ['payment_ref'], ''));
+  $giftNote = trim((string)($o['gift_note'] ?? ''));
   if ($s === 'cancelled') {
     $statusBadge = 'text-bg-danger';
     $statusLabel = 'Anulada';
@@ -434,6 +492,9 @@ ob_start(); ?>
   } elseif ($s === 'paid') {
     $statusBadge = 'text-bg-success';
     $statusLabel = 'Pagado';
+  } elseif ($s === 'gift') {
+    $statusBadge = 'text-bg-info';
+    $statusLabel = 'Obsequio';
   } else {
     $statusBadge = 'text-bg-secondary';
     $statusLabel = $status ? ucfirst($status) : '—';
@@ -473,6 +534,11 @@ ob_start(); ?>
               <?php endif; ?>
               <?php if ($paidRef !== ''): ?>
                 <div class="small text-muted">N° de comprobante: <strong><?= e($paidRef) ?></strong></div>
+              <?php endif; ?>
+              <?php if ($s === 'gift'): ?>
+                <div class="small text-muted mt-1">
+                  Obsequio: no suma en el consolidado<?= $giftNote !== '' ? ' · <strong>' . e($giftNote) . '</strong>' : '' ?>
+                </div>
               <?php endif; ?>
             </div>
           </div>
@@ -547,6 +613,10 @@ ob_start(); ?>
                     data-bs-toggle="collapse" data-bs-target="#pagar_<?= (int)$oid ?>">
               Marcar como pagada
             </button>
+            <button class="btn btn-outline-info btn-sm" type="button"
+                    data-bs-toggle="collapse" data-bs-target="#obsequio_<?= (int)$oid ?>">
+              Dar como obsequio
+            </button>
           <?php endif; ?>
 
           <button class="btn btn-outline-secondary btn-sm" type="button"
@@ -581,6 +651,24 @@ ob_start(); ?>
                          style="max-width:320px"
                          placeholder="Consignación, recibo, transferencia…">
                   <button class="btn btn-success btn-sm" type="submit">Confirmar cobro</button>
+                </div>
+              </form>
+            </div>
+
+            <div class="collapse mt-2" id="obsequio_<?= (int)$oid ?>">
+              <form method="post" action="<?= url('admin_sales.php') ?>" class="border rounded p-2"
+                    onsubmit="return confirm('¿Registrar esta venta como OBSEQUIO? Dejará de sumar en el consolidado; el stock sigue descontado.');">
+                <?= csrf_field() ?>
+                <input type="hidden" name="action" value="mark_gift">
+                <input type="hidden" name="order_id" value="<?= (int)$oid ?>">
+                <label class="form-label small mb-1">
+                  Motivo o beneficiario <span class="text-muted">(opcional)</span>
+                </label>
+                <div class="d-flex gap-2 flex-wrap">
+                  <input class="form-control form-control-sm" name="gift_note" maxlength="255"
+                         style="max-width:320px"
+                         placeholder="Cortesía a invitado, patrocinio, premio…">
+                  <button class="btn btn-info btn-sm" type="submit">Confirmar obsequio</button>
                 </div>
               </form>
             </div>

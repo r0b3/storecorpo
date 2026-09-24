@@ -34,7 +34,9 @@ function pick_date_col(PDO $pdo, string $table): ?string {
   }
   return null;
 }
-// Filtros con opción de excluir anuladas (por defecto true)
+// Filtros con opción de excluir lo que no es venta (por defecto true): las
+// anuladas y los obsequios. El obsequio sí sacó producto del stand, pero no
+// entró dinero: sumarlo inflaría el consolidado.
 function where_and_params(PDO $pdo, string $ordersT, ?string $dateCol, bool $excludeCancelled = true): array {
   $where = ["1"];
   $p = [];
@@ -46,7 +48,7 @@ function where_and_params(PDO $pdo, string $ordersT, ?string $dateCol, bool $exc
   $art  = $_GET['art'] ?? '';
 
   if ($excludeCancelled && has_column($pdo, $ordersT, 'status')) {
-    $where[] = "{$ordersT}.status <> 'cancelled'";
+    $where[] = "{$ordersT}.status NOT IN ('cancelled','gift')";
   }
 
   // Columnas reales
@@ -85,7 +87,7 @@ $dateCol = pick_date_col($pdo, $ordersT);
 $hasArtesanas = has_column($pdo,$ordersT,'for_artesanas');
 
 /* ===== Filtros ===== */
-// Para totales y agrupaciones: EXCLUIR canceladas
+// Para totales y agrupaciones: EXCLUIR anuladas y obsequios
 list('where'=>$WHERE, 'params'=>$PARAMS) = where_and_params($pdo, $ordersT, $dateCol, true);
 $WHERE_O = preg_replace('/\b'.preg_quote($ordersT, '/').'\./', 'o.', $WHERE);
 
@@ -106,6 +108,13 @@ WHERE {$WHERE}";
 $totals = $pdo->prepare($sqlTotals);
 $totals->execute($PARAMS);
 $TOT = array_map(fn($v)=>$v ?? 0, $totals->fetch(PDO::FETCH_ASSOC) ?: []);
+
+// Obsequios: aparte, con los mismos filtros, a valor de venta.
+$sqlGift = "SELECT COUNT(*) AS n, COALESCE(SUM(total),0) AS s FROM {$ordersT}
+WHERE {$WHERE_LIST} AND {$ordersT}.status = 'gift'";
+$stGift = $pdo->prepare($sqlGift);
+$stGift->execute($PARAMS_LIST);
+$GIFT = $stGift->fetch(PDO::FETCH_ASSOC) ?: ['n'=>0, 's'=>0];
 
 // Por día
 $sqlByDay = "SELECT DATE(".($dateCol ? "{$ordersT}.{$dateCol}" : "{$ordersT}.id").") AS d,
@@ -245,29 +254,36 @@ $art  = e($_GET['art']  ?? '');
 
 <!-- Tarjetas de totales -->
 <div class="row g-3 mb-3">
-  <div class="col-sm-6 col-md-3">
+  <div class="col-6 col-lg">
     <div class="card shadow-sm"><div class="card-body">
       <div class="text-muted small">Órdenes</div>
       <div class="fs-4 fw-semibold"><?= (int)($TOT['n_orders'] ?? 0) ?></div>
     </div></div>
   </div>
-  <div class="col-sm-6 col-md-3">
+  <div class="col-6 col-lg">
     <div class="card shadow-sm"><div class="card-body">
       <div class="text-muted small">Subtotal</div>
       <div class="fs-4 fw-semibold">$<?= money($TOT['subtotal_sum'] ?? 0) ?></div>
     </div></div>
   </div>
-  <div class="col-sm-6 col-md-3">
+  <div class="col-6 col-lg">
     <div class="card shadow-sm"><div class="card-body">
       <div class="text-muted small">Impuestos</div>
       <div class="fs-4 fw-semibold">$<?= money($TOT['tax_sum'] ?? 0) ?></div>
     </div></div>
   </div>
-  <div class="col-sm-6 col-md-3">
+  <div class="col-6 col-lg">
     <div class="card shadow-sm"><div class="card-body">
       <div class="text-muted small">Total</div>
       <div class="fs-4 fw-semibold">$<?= money($TOT['total_sum'] ?? 0) ?></div>
       <div class="small text-success mt-1">Pagado: $<?= money($TOT['total_paid'] ?? 0) ?></div>
+    </div></div>
+  </div>
+  <div class="col-6 col-lg">
+    <div class="card shadow-sm"><div class="card-body">
+      <div class="text-muted small">Obsequios</div>
+      <div class="fs-4 fw-semibold"><?= (int)$GIFT['n'] ?></div>
+      <div class="small text-muted mt-1">$<?= money($GIFT['s']) ?> · no suman al total</div>
     </div></div>
   </div>
 </div>
@@ -418,7 +434,7 @@ $art  = e($_GET['art']  ?? '');
     </div>
   </div>
 
-  <!-- Listado de órdenes (incluye canceladas, en rojo) -->
+  <!-- Listado de órdenes (incluye anuladas en rojo y obsequios en celeste) -->
   <div class="col-12">
     <div class="card shadow-sm">
       <div class="card-header">Órdenes (últimas <?= (int)$orderListLimit ?>)</div>
@@ -440,8 +456,8 @@ $art  = e($_GET['art']  ?? '');
               </thead>
               <tbody>
                 <?php foreach ($ORDERS_LIST as $o):
-                  $isCancelled = (strtolower((string)($o['status'] ?? '')) === 'cancelled');
-                  $rowClass = $isCancelled ? 'table-danger' : '';
+                  $stLc = strtolower((string)($o['status'] ?? ''));
+                  $rowClass = $stLc === 'cancelled' ? 'table-danger' : ($stLc === 'gift' ? 'table-info' : '');
                   $fecha  = $dateCol && !empty($o[$dateCol]) ? $o[$dateCol] : ($o['created_at'] ?? ($o['date'] ?? '—'));
                   // Cliente: empresa o persona
                   $cliente = $o['company_name'] ?? ($o['person_name'] ?? ($o['full_name'] ?? '—'));
@@ -464,10 +480,17 @@ $art  = e($_GET['art']  ?? '');
                       'cancelled' => 'text-bg-danger',   // rojo
                       'pending'   => 'text-bg-warning',  // amarillo
                       'paid'      => 'text-bg-success',  // verde
+                      'gift'      => 'text-bg-info',     // celeste
                       default     => 'text-bg-secondary' // gris
                     };
                     // Etiqueta amigable
-                    $label = $statusLc === 'cancelled' ? 'Anulada' : ucfirst($statusLc ?: '—');
+                    $label = match ($statusLc) {
+                      'cancelled' => 'Anulada',
+                      'pending'   => 'Pendiente',
+                      'paid'      => 'Pagada',
+                      'gift'      => 'Obsequio',
+                      default     => ucfirst($statusLc ?: '—'),
+                    };
                   ?>
                   <span class="badge <?= $badgeClass ?>"><?= e($label) ?></span>
                 </td>

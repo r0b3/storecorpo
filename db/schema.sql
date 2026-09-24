@@ -114,7 +114,8 @@ CREATE TABLE IF NOT EXISTS `orders` (
   `subtotal`         DECIMAL(12,2) NOT NULL DEFAULT 0.00,
   `tax`              DECIMAL(12,2) NOT NULL DEFAULT 0.00,   -- la app fuerza 0
   `total`            DECIMAL(12,2) NOT NULL DEFAULT 0.00,
-  `status`           ENUM('pending','paid','cancelled') NOT NULL DEFAULT 'pending',
+  -- gift = obsequio: el stock sigue descontado pero no suma como venta.
+  `status`           ENUM('pending','paid','cancelled','gift') NOT NULL DEFAULT 'pending',
   `created_at`       TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP,
   `cancelled_at`     DATETIME     DEFAULT NULL,
   `cancelled_by`     INT UNSIGNED DEFAULT NULL,
@@ -126,6 +127,9 @@ CREATE TABLE IF NOT EXISTS `orders` (
   `notas`            TEXT         DEFAULT NULL,   -- observación libre sobre la venta
   `notas_at`         DATETIME     DEFAULT NULL,
   `notas_by`         INT(11)      DEFAULT NULL,
+  `gift_at`          DATETIME     DEFAULT NULL,   -- cuándo se dio como obsequio
+  `gift_by`          INT(11)      DEFAULT NULL,   -- id SSO de quien lo autorizó
+  `gift_note`        VARCHAR(255) DEFAULT NULL,   -- motivo o beneficiario
   PRIMARY KEY (`id`),
   KEY `ix_orders_user` (`user_id`),
   KEY `ix_orders_status` (`status`),
