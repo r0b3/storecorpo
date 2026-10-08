@@ -4,6 +4,8 @@
 require_once __DIR__ . '/../lib/helpers.php';
 require_once __DIR__ . '/../views/main.php';
 require_once __DIR__ . '/../lib/db.php';
+require_once __DIR__ . '/../lib/variantes.php';
+require_once __DIR__ . '/../lib/reservas.php';
 require_once __DIR__ . '/_gate_private.php'; // portal privado
 
 // 1) Sesión SIEMPRE
@@ -106,12 +108,8 @@ function cart_add(PDO $pdo, int $pid, ?int $vid, int $qty): void {
     // La foto de la variante (el color concreto) manda sobre la del producto.
     if (!empty($v['image'])) $image = $v['image'];
 
-    $parts = [];
-    $o1n = trim((string)($v['option1_name'] ?? '')); $o1v = trim((string)($v['option1_value'] ?? ''));
-    $o2n = trim((string)($v['option2_name'] ?? '')); $o2v = trim((string)($v['option2_value'] ?? ''));
-    if ($o1n !== '' || $o1v !== '') $parts[] = ($o1n !== '' ? $o1n.': ' : '').($o1v !== '' ? $o1v : '');
-    if ($o2n !== '' || $o2v !== '') $parts[] = ($o2n !== '' ? $o2n.': ' : '').($o2v !== '' ? $o2v : '');
-    $variantLabel = implode(' / ', array_filter($parts, fn($x)=>trim($x) !== ''));
+    // Etiqueta con TODAS las opciones (también la 3.ª en adelante).
+    $variantLabel = variante_etiqueta(variantes_opciones($pdo, [$v])[(int)$v['id']] ?? []);
 
     // Tope por stock si existe
     if (isset($v['stock'])) {
@@ -191,6 +189,65 @@ if (is_ajax_request() || isset($_POST['ajax'])) {
       redirect('cart.php', 303);
     }
 
+    /* --- Carritos reservados (en espera) --------------------------- */
+    if ($action === 'reserve' || $action === 'resume' || $action === 'discard') {
+      if (!reservas_disponible($pdo)) throw new RuntimeException('Esta instalación no tiene carritos reservados.');
+      $u   = function_exists('auth_user') ? auth_user() : null;
+      $uid = isset($u['id']) ? (int)$u['id'] : null;
+
+      $pdo->beginTransaction();
+      try {
+        if ($action === 'reserve') {
+          $nombre = trim((string)($_POST['reserva_nombre'] ?? ''));
+          reservas_apartar($pdo, $_SESSION['cart'], $nombre, $uid);
+          $pdo->commit();
+          $_SESSION['cart'] = [];
+          $msg = 'Carrito reservado' . ($nombre !== '' ? ' para ' . $nombre : '') . ': el stock quedó apartado. Ya puedes atender a otro cliente.';
+        }
+        elseif ($action === 'resume') {
+          $cid = (int)($_POST['cart_id'] ?? 0);
+          // Si había un carrito en curso (otro cliente), se reserva solo antes
+          // de retomar: así se puede alternar entre clientes sin perder nada.
+          $aparcado = false;
+          if (!empty($_SESSION['cart'])) {
+            reservas_apartar($pdo, $_SESSION['cart'], 'Carrito en curso (guardado al retomar otro)', $uid);
+            $aparcado = true;
+          }
+          $r = reservas_liberar($pdo, $cid);
+          $pdo->commit();
+
+          $nuevo = []; $omitidas = 0;
+          $existe = $pdo->prepare("SELECT 1 FROM products WHERE id = :id");
+          foreach ($r['lineas'] as $l) {
+            $existe->execute([':id' => (int)$l['product_id']]);
+            if (!$existe->fetchColumn()) { $omitidas++; continue; }   // producto borrado mientras esperaba
+            $k = cart_key((int)$l['product_id'], $l['variant_id'] !== null ? (int)$l['variant_id'] : null);
+            if (!isset($nuevo[$k])) {
+              $nuevo[$k] = [
+                'pid' => (int)$l['product_id'], 'vid' => $l['variant_id'] !== null ? (int)$l['variant_id'] : null,
+                'name' => $l['name'], 'price' => (float)$l['unit_price'], 'qty' => 0,
+                'sku' => $l['sku'], 'image' => $l['image'], 'variant' => (string)($l['variant_label'] ?? ''),
+              ];
+            }
+            $nuevo[$k]['qty'] += (int)$l['quantity'];
+          }
+          $_SESSION['cart'] = $nuevo;
+          $msg = 'Retomado el carrito de ' . $r['label'] . '.'
+               . ($aparcado ? ' El que tenías en curso quedó reservado.' : '')
+               . ($omitidas ? " Se quitaron {$omitidas} línea(s) de productos que ya no existen." : '');
+        }
+        else { // discard
+          $r = reservas_liberar($pdo, (int)($_POST['cart_id'] ?? 0));
+          $pdo->commit();
+          $msg = 'Reserva de ' . $r['label'] . ' liberada: el stock volvió al inventario.';
+        }
+      } catch (Throwable $e) {
+        if ($pdo->inTransaction()) $pdo->rollBack();
+        throw $e;
+      }
+      redirect('cart.php?' . http_build_query(['ok' => '1', 'msg' => $msg]), 303);
+    }
+
     if ($action === 'clear') {
       $_SESSION['cart'] = [];
       if (is_ajax_request() || isset($_POST['ajax'])) {
@@ -219,6 +276,7 @@ $tax   = 0.0;
 $total = $subtotal;
 
 $cats = $pdo->query("SELECT name, slug FROM categories ORDER BY name")->fetchAll(PDO::FETCH_ASSOC);
+$reservas = reservas_listar($pdo);
 $flash_ok  = ($_GET['ok'] ?? '') === '1';
 $flash_msg = trim($_GET['msg'] ?? '');
 
@@ -229,5 +287,7 @@ render('Tienda - Carrito', __DIR__ . '/../views/pages/cart.php', [
   'cats'      => $cats,
   'flash_ok'  => $flash_ok,
   'flash_msg' => $flash_msg,
+  'reservas'  => $reservas,
+  'reservasOn'=> reservas_disponible($pdo),
 ]);
 

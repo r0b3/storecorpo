@@ -18,6 +18,14 @@ $cartCount = 0;
 if (!empty($_SESSION['cart']) && is_array($_SESSION['cart'])) {
   foreach ($_SESSION['cart'] as $ci) { $cartCount += (int)($ci['qty'] ?? 0); }
 }
+
+// Carritos reservados: visibles en todas las pantallas porque apartan stock y
+// no deben quedar olvidados. Si falla la consulta, la navbar no se rompe.
+$enEspera = 0;
+try {
+  require_once __DIR__ . '/../../lib/reservas.php';
+  $enEspera = reservas_contar(get_pdo());
+} catch (Throwable $ex) { error_log('[navbar reservas] ' . $ex->getMessage()); }
 ?>
 <nav class="navbar navbar-expand-lg navbar-dark bg-dark mb-4 sticky-top">
   <div class="container">
@@ -123,6 +131,9 @@ if (!empty($_SESSION['cart']) && is_array($_SESSION['cart'])) {
 
         <a class="btn btn-outline-light position-relative" href="<?= url('cart.php') ?>" aria-label="Ver carrito">
           <span class="me-1">Carrito</span>
+          <?php if ($enEspera > 0): ?>
+            <span class="badge text-bg-warning ms-1" title="Carritos reservados apartando stock"><?= (int)$enEspera ?> en espera</span>
+          <?php endif; ?>
           <span id="cartBadge" class="position-absolute top-0 start-100 translate-middle badge rounded-pill bg-danger">
             <?= (int)$cartCount ?>
           </span>

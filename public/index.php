@@ -4,6 +4,7 @@
 require_once __DIR__ . '/../lib/helpers.php';
 require_once __DIR__ . '/../lib/auth.php';
 require_once __DIR__ . '/../views/main.php';
+require_once __DIR__ . '/../lib/variantes.php';
 require_once __DIR__ . '/_gate_private.php'; // portal privado
 
 $pdo = get_pdo();
@@ -37,6 +38,7 @@ foreach ((array)($_GET['opt'] ?? []) as $k => $v) {
 }
 
 $hasParent = has_column($pdo, 'categories', 'parent_id');
+$hayExtra  = variantes_extra_disponible($pdo);
 
 /* ===== Carga de productos con categoría (por slug) ===== */
 $imgCol = product_image_col($pdo);
@@ -73,8 +75,13 @@ if ($opt) {
   foreach ($opt as $nombre => $valor) {
     $i++;
     $pn = ":on{$i}"; $pv = ":ov{$i}";
+    // La opción puede estar en las columnas 1-2 o, de la 3 en adelante, en
+    // product_variant_options; en ambos casos, de la MISMA variante v.
     $cond[] = "((v.option1_name = {$pn} AND v.option1_value = {$pv})
-             OR (v.option2_name = {$pn} AND v.option2_value = {$pv}))";
+             OR (v.option2_name = {$pn} AND v.option2_value = {$pv})"
+            . ($hayExtra ? " OR EXISTS (SELECT 1 FROM product_variant_options x
+                                         WHERE x.variant_id = v.id AND x.name = {$pn} AND x.value = {$pv})" : "")
+            . ")";
     $args[$pn] = $nombre; $args[$pv] = $valor;
   }
   $sql .= " AND EXISTS (SELECT 1 FROM product_variants v
@@ -105,7 +112,10 @@ if ($products) {
                     v.option2_value, v.id";
   $sv = $pdo->prepare($sqlV);
   $sv->execute($ids);
-  foreach ($sv->fetchAll(PDO::FETCH_ASSOC) as $v) {
+  $filasV = $sv->fetchAll(PDO::FETCH_ASSOC);
+  $opcsV  = variantes_opciones($pdo, $filasV);
+  foreach ($filasV as $v) {
+    $v['opts'] = $opcsV[(int)$v['id']] ?? [];
     $variantsByProduct[(int)$v['product_id']][] = $v;
   }
 }
@@ -124,6 +134,15 @@ foreach ([1, 2] as $n) {
         AND option{$n}_name IS NOT NULL AND option{$n}_name <> ''
         AND option{$n}_value IS NOT NULL AND option{$n}_value <> ''
       ORDER BY nombre, valor"
+  )->fetchAll(PDO::FETCH_ASSOC);
+  foreach ($rows as $r) { $facetas[$r['nombre']][$r['valor']] = true; }
+}
+if ($hayExtra) {
+  $rows = $pdo->query(
+    "SELECT DISTINCT x.name AS nombre, x.value AS valor
+       FROM product_variant_options x
+       JOIN product_variants v ON v.id = x.variant_id
+      WHERE (v.active = 1 OR v.active IS NULL)"
   )->fetchAll(PDO::FETCH_ASSOC);
   foreach ($rows as $r) { $facetas[$r['nombre']][$r['valor']] = true; }
 }
@@ -259,9 +278,7 @@ function ordenar_valores(array $vals): array {
   // simple aunque tenga una variante: esa variante solo guarda el stock, y
   // mostrarla como fila "Variante" no le decía nada al vendedor.
   $conOpciones = false;
-  foreach ($vlist as $vv) {
-    if (trim((string)($vv['option1_value'] ?? '')) !== '' || trim((string)($vv['option2_value'] ?? '')) !== '') { $conOpciones = true; break; }
-  }
+  foreach ($vlist as $vv) { if (!empty($vv['opts'])) { $conOpciones = true; break; } }
 
   $stockS = null; $vidS = '';
   if (!$conOpciones) {
@@ -270,23 +287,27 @@ function ordenar_valores(array $vals): array {
     $stockS = $vS ? (int)$vS['stock'] : null;
     $vidS   = $vS ? (int)$vS['id'] : '';
   } else {
-    $vars = []; $vals1 = []; $vals2 = [];
-    $nom1 = ''; $nom2 = '';
+    // Una dimensión por NOMBRE de opción (Talla, Color, Manga…), en el orden
+    // en que aparecen; cada variante guarda su valor en cada una.
+    $vars = []; $dims = [];
     foreach ($vlist as $vv) {
-      $o1 = trim((string)($vv['option1_value'] ?? '')); $o2 = trim((string)($vv['option2_value'] ?? ''));
-      if ($o1 !== '') { $vals1[] = $o1; $nom1 = $nom1 ?: trim((string)$vv['option1_name']); }
-      if ($o2 !== '') { $vals2[] = $o2; $nom2 = $nom2 ?: trim((string)$vv['option2_name']); }
+      $o = [];
+      foreach ($vv['opts'] as $op) {
+        $n = $op['n'] !== '' ? $op['n'] : 'Opción';
+        $o[$n] = $op['v'];
+        if ($op['v'] !== '') { $dims[$n][] = $op['v']; }
+      }
       $vars[] = [
-        'id' => (int)$vv['id'], 'o1' => $o1, 'o2' => $o2,
+        'id' => (int)$vv['id'], 'o' => $o,
         'precio' => $vv['price'] !== null ? (float)$vv['price'] : $base,
         'stock'  => (int)$vv['stock'],
         'img'    => (string)($vv['image'] ?? ''),
       ];
     }
-    $vals1 = ordenar_valores($vals1);
-    $vals2 = ordenar_valores($vals2);
-    // Si el catálogo viene filtrado (p. ej. Talla=M), la tarjeta arranca en esa talla.
-    $pref = ['o1' => $opt[$nom1] ?? '', 'o2' => $opt[$nom2] ?? ''];
+    foreach ($dims as $n => $vals) { $dims[$n] = ordenar_valores($vals); }
+    // Si el catálogo viene filtrado (p. ej. Talla=M), la tarjeta arranca ahí.
+    $pref = [];
+    foreach ($dims as $n => $_) { if (isset($opt[$n])) { $pref[$n] = $opt[$n]; } }
     $precio = $vars[0]['precio'] ?? $base;
   }
   $cat_txt = !empty($p['category'])
@@ -313,12 +334,12 @@ function ordenar_valores(array $vals): array {
                data-variantes="<?= e(json_encode($vars, JSON_UNESCAPED_UNICODE)) ?>"
                data-pref="<?= e(json_encode($pref, JSON_UNESCAPED_UNICODE)) ?>"
                data-base-uploads="<?= e(url('uploads/')) ?>">
-            <?php foreach ([1 => [$nom1, $vals1], 2 => [$nom2, $vals2]] as $dim => [$nom, $vals]): if (!$vals) continue; ?>
+            <?php foreach ($dims as $nom => $vals): ?>
               <div class="mb-2">
-                <div class="sel-label"><?= e($nom ?: 'Opción') ?>: <strong data-actual="<?= $dim ?>"></strong></div>
-                <div class="d-flex flex-wrap gap-1" role="group" aria-label="<?= e($nom ?: 'Opción') ?>">
+                <div class="sel-label"><?= e($nom) ?>: <strong data-actual="<?= e($nom) ?>"></strong></div>
+                <div class="d-flex flex-wrap gap-1" role="group" aria-label="<?= e($nom) ?>">
                   <?php foreach ($vals as $val): ?>
-                    <button type="button" class="chip" data-dim="<?= $dim ?>" data-val="<?= e($val) ?>"
+                    <button type="button" class="chip" data-dim="<?= e($nom) ?>" data-val="<?= e($val) ?>"
                             aria-pressed="false"><?= e($val) ?></button>
                   <?php endforeach; ?>
                 </div>
@@ -371,12 +392,13 @@ function ordenar_valores(array $vals): array {
     const pref  = JSON.parse(sel.dataset.pref || '{}');
     const baseU = sel.dataset.baseUploads || '';
     const card  = sel.closest('.producto');
-    const dims  = [...new Set([...sel.querySelectorAll('.chip')].map(c => +c.dataset.dim))];
-    const val   = (v, d) => d === 1 ? v.o1 : v.o2;
+    const dims  = [...new Set([...sel.querySelectorAll('.chip')].map(c => c.dataset.dim))];
+    const val   = (v, d) => (v.o && v.o[d]) || '';
     const st    = {};
 
     // Arranque: lo que pida el filtro activo; si no, la primera con stock.
-    const ini = V.find(v => (!pref.o1 || v.o1 === pref.o1) && (!pref.o2 || v.o2 === pref.o2) && v.stock > 0)
+    const cumplePref = v => Object.keys(pref).every(d => val(v, d) === pref[d]);
+    const ini = V.find(v => cumplePref(v) && v.stock > 0)
              || V.find(v => v.stock > 0) || V[0];
     dims.forEach(d => { st[d] = ini ? val(ini, d) : null; });
 
@@ -384,14 +406,14 @@ function ordenar_valores(array $vals): array {
 
     function pintar() {
       sel.querySelectorAll('.chip').forEach(ch => {
-        const d = +ch.dataset.dim, x = ch.dataset.val, on = st[d] === x;
+        const d = ch.dataset.dim, x = ch.dataset.val, on = st[d] === x;
         ch.classList.toggle('activo', on);
         ch.setAttribute('aria-pressed', on ? 'true' : 'false');
         // Disponible = existe con lo elegido en la otra dimensión y tiene stock.
         const cand = V.find(v => val(v, d) === x && dims.every(o => o === d || val(v, o) === st[o]));
         ch.classList.toggle('sin-stock', !cand || cand.stock <= 0);
       });
-      dims.forEach(d => { const t = sel.querySelector('[data-actual="' + d + '"]'); if (t) t.textContent = st[d] || ''; });
+      sel.querySelectorAll('[data-actual]').forEach(t => { t.textContent = st[t.dataset.actual] || ''; });
 
       const v = actual();
       const precio = card.querySelector('.prod-precio'), estado = card.querySelector('.prod-estado');
@@ -418,7 +440,17 @@ function ordenar_valores(array $vals): array {
     sel.addEventListener('click', ev => {
       const ch = ev.target.closest('.chip');
       if (!ch) return;
-      st[+ch.dataset.dim] = ch.dataset.val;
+      const d = ch.dataset.dim, x = ch.dataset.val;
+      st[d] = x;
+      // Con 3+ opciones es fácil caer en una combinación que no existe (Blanca
+      // + M + Larga). En vez de dejar al vendedor adivinando qué más cambiar,
+      // las otras opciones saltan a la variante con ese valor que más se
+      // parezca a lo elegido, prefiriendo una con stock.
+      if (!actual()) {
+        const puntos = v => dims.filter(o => o !== d && val(v, o) === st[o]).length * 2 + (v.stock > 0 ? 1 : 0);
+        const mejor = V.filter(v => val(v, d) === x).sort((a, b) => puntos(b) - puntos(a))[0];
+        if (mejor) dims.forEach(o => { st[o] = val(mejor, o); });
+      }
       pintar();
     });
     pintar();

@@ -6,6 +6,8 @@ error_reporting(E_ALL);
 require_once __DIR__ . '/../lib/helpers.php';
 require_once __DIR__ . '/../lib/auth.php';
 require_once __DIR__ . '/../views/main.php';
+require_once __DIR__ . '/../lib/variantes.php';
+require_once __DIR__ . '/../lib/reservas.php';
 // La puerta SSO va ANTES de cualquier verificación: es la que ejecuta el
 // validador central y deja $usuario_sso en scope. Si se invierte el orden,
 // require_login() no ve usuario y devuelve 403 aunque seas Admin.
@@ -231,10 +233,11 @@ elseif ($action === 'update_product') {
   $chk->execute([':id'=>$pid]);
   if (!$chk->fetchColumn()) throw new RuntimeException('El producto no existe (ID: '.$pid.').');
 
-  $o1n  = trim($_POST['option1_name'] ?? '');
-  $o1v  = trim($_POST['option1_value'] ?? '');
-  $o2n  = trim($_POST['option2_name'] ?? '');
-  $o2v  = trim($_POST['option2_value'] ?? '');
+  // Opciones sin límite: las dos primeras van a sus columnas, el resto a
+  // product_variant_options (ver lib/variantes.php).
+  $pares = variantes_opciones_del_post();
+  $o1n = $pares[0]['n'] ?? ''; $o1v = $pares[0]['v'] ?? '';
+  $o2n = $pares[1]['n'] ?? ''; $o2v = $pares[1]['v'] ?? '';
   $sku  = trim($_POST['sku'] ?? '');
   $stk  = (int)($_POST['stock'] ?? 0);
   $prc  = strlen($_POST['price'] ?? '') ? (float)$_POST['price'] : null;
@@ -274,7 +277,9 @@ elseif ($action === 'update_product') {
     ]);
   }
 
-  if (!$ok || !$pdo->lastInsertId()) throw new RuntimeException('No se pudo insertar la variante.');
+  $nuevoVid = (int)$pdo->lastInsertId();
+  if (!$ok || !$nuevoVid) throw new RuntimeException('No se pudo insertar la variante.');
+  variantes_guardar_extra($pdo, $nuevoVid, $pares);
   flash_redirect('admin_inventory.php#v'.$pid, true, 'Variante creada.');
 } 
 elseif ($action === 'update_variant') {
@@ -282,10 +287,11 @@ elseif ($action === 'update_variant') {
   $pid  = (int)($_POST['product_id'] ?? 0);
   if ($vid<=0 || $pid<=0) throw new RuntimeException('Variante o producto inválido.');
 
-  $o1n  = trim($_POST['option1_name'] ?? '');
-  $o1v  = trim($_POST['option1_value'] ?? '');
-  $o2n  = trim($_POST['option2_name'] ?? '');
-  $o2v  = trim($_POST['option2_value'] ?? '');
+  // Opciones sin límite: las dos primeras van a sus columnas, el resto a
+  // product_variant_options (ver lib/variantes.php).
+  $pares = variantes_opciones_del_post();
+  $o1n = $pares[0]['n'] ?? ''; $o1v = $pares[0]['v'] ?? '';
+  $o2n = $pares[1]['n'] ?? ''; $o2v = $pares[1]['v'] ?? '';
   $sku  = trim($_POST['sku'] ?? '');
   $stk  = (int)($_POST['stock'] ?? 0);
   $prc  = strlen($_POST['price'] ?? '') ? (float)$_POST['price'] : null;
@@ -315,6 +321,11 @@ elseif ($action === 'update_variant') {
   }
 
   $pdo->prepare($sql)->execute($params);
+  // Si la variante no es de este producto, el UPDATE no tocó nada: no hay que
+  // reescribirle las opciones extra a una variante ajena.
+  $chk = $pdo->prepare("SELECT 1 FROM product_variants WHERE id=:id AND product_id=:pid");
+  $chk->execute([':id'=>$vid, ':pid'=>$pid]);
+  if ($chk->fetchColumn()) { variantes_guardar_extra($pdo, $vid, $pares); }
   flash_redirect('admin_inventory.php#v'.$pid, true, 'Variante actualizada.');
 }
       elseif ($action === 'delete_variant') {
@@ -355,6 +366,10 @@ $cats = $pdo->query("SELECT {$catsCols} FROM categories ORDER BY name")->fetchAl
 
 $products = $pdo->query($sql)->fetchAll(PDO::FETCH_ASSOC);
 
+// Unidades apartadas en carritos reservados: ya están descontadas del stock,
+// así que se muestran aparte para que no parezca que "desaparecieron".
+$apartadas = reservas_apartadas($pdo);
+
 // Variantes por producto (para poblar el modal sin AJAX)
 $variantsByProduct = [];
 if ($products) {
@@ -367,7 +382,26 @@ if ($products) {
     if (!isset($variantsByProduct[$pid])) $variantsByProduct[$pid] = [];
     $variantsByProduct[$pid][] = $v;
   }
+  // Lista completa de opciones (1-2 de columnas + 3 en adelante) para el modal.
+  $opcs = $variantsByProduct ? variantes_opciones($pdo, array_merge(...array_values($variantsByProduct))) : [];
+  foreach ($variantsByProduct as &$lista) {
+    foreach ($lista as &$v) {
+      $v['opts'] = $opcs[(int)$v['id']] ?? [];
+      $v['apartadas'] = $apartadas['variante'][(int)$v['id']] ?? 0;
+    }
+    unset($v);
+  }
+  unset($lista);
 }
+
+// Nombres de opción ya usados, para sugerirlos al escribir (Talla, Color…)
+// y que no aparezcan "Talla" y "talla" como filtros distintos.
+$nombresOpcion = [];
+foreach ($variantsByProduct as $lista) {
+  foreach ($lista as $v) { foreach ($v['opts'] as $o) { if ($o['n'] !== '') $nombresOpcion[$o['n']] = true; } }
+}
+$nombresOpcion = array_keys($nombresOpcion);
+natcasesort($nombresOpcion);
 
 
 /* ========= UI ========= */
@@ -424,7 +458,12 @@ if ($msg !== '') {
 </td>
 
               <td class="text-end">$<?= money($p['base_price']) ?></td>
-              <td class="text-end"><?= (int)$p['total_stock'] ?></td>
+              <td class="text-end">
+                <?= (int)$p['total_stock'] ?>
+                <?php if (!empty($apartadas['producto'][(int)$p['id']])): ?>
+                  <div class="small text-warning-emphasis" title="En carritos reservados">+<?= (int)$apartadas['producto'][(int)$p['id']] ?> apartadas</div>
+                <?php endif; ?>
+              </td>
               <td class="text-end">
               <button class="btn btn-sm btn-outline-secondary me-1"
                       data-bs-toggle="modal" data-bs-target="#modalVariants"
@@ -621,8 +660,7 @@ if ($msg !== '') {
             <thead>
               <tr>
                 <th>ID</th>
-                <th>Opción 1</th>
-                <th>Opción 2</th>
+                <th>Opciones</th>
                 <th>SKU</th>
                 <th class="text-end">Stock</th>
                 <th class="text-end">Precio</th>
@@ -641,23 +679,14 @@ if ($msg !== '') {
             <input type="hidden" name="action" value="add_variant" id="variant_action">
             <input type="hidden" name="product_id" id="variant_product_id">
             <input type="hidden" name="variant_id" id="variant_id">
+              <!-- Opciones: tantas como el producto necesite (Talla, Color, Manga…). -->
+              <label class="form-label mb-1">Opciones</label>
+              <div id="v_opciones" class="d-flex flex-column gap-2 mb-2"></div>
+              <button class="btn btn-sm btn-outline-secondary mb-3" type="button" id="btnAddOpcion">+ Agregar opción</button>
+              <datalist id="dlNombresOpcion">
+                <?php foreach ($nombresOpcion as $n): ?><option value="<?= e($n) ?>"><?php endforeach; ?>
+              </datalist>
               <div class="row g-3">
-                <div class="col-md-3">
-                  <label class="form-label">Opción 1 (ej. Talla)</label>
-                  <input class="form-control" name="option1_name" id="v_o1n" placeholder="Talla">
-                </div>
-                <div class="col-md-3">
-                  <label class="form-label">Valor 1 (ej. M)</label>
-                  <input class="form-control" name="option1_value" id="v_o1v" placeholder="M">
-                </div>
-                <div class="col-md-3">
-                  <label class="form-label">Opción 2 (ej. Color)</label>
-                  <input class="form-control" name="option2_name" id="v_o2n" placeholder="Color">
-                </div>
-                <div class="col-md-3">
-                  <label class="form-label">Valor 2 (ej. Azul)</label>
-                  <input class="form-control" name="option2_value" id="v_o2v" placeholder="Azul">
-                </div>
 
                 <div class="col-md-3">
                   <label class="form-label">SKU</label>
@@ -703,8 +732,43 @@ if ($msg !== '') {
 
 <script>
 // Datos server-side
-const VARIANTS = <?= json_encode($variantsByProduct, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) ?>;
-const PRODUCTS = <?= json_encode(array_column($products, null, 'id'), JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) ?>;
+// JSON_HEX_*: un nombre con una etiqueta de cierre de script no debe poder cerrar este bloque.
+const VARIANTS = <?= json_encode($variantsByProduct, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT) ?>;
+const PRODUCTS = <?= json_encode(array_column($products, null, 'id'), JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT) ?>;
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+
+// Filas nombre/valor de opción. Se envían como opt_name[] / opt_value[].
+const cajaOpciones = document.getElementById('v_opciones');
+function filaOpcion(n = '', v = '') {
+  const div = document.createElement('div');
+  div.className = 'd-flex gap-2 align-items-center fila-opcion';
+  div.innerHTML = `
+    <input class="form-control form-control-sm" name="opt_name[]" list="dlNombresOpcion" maxlength="60"
+           placeholder="Opción (ej. Talla)" aria-label="Nombre de la opción" value="${esc(n)}">
+    <input class="form-control form-control-sm" name="opt_value[]" maxlength="120"
+           placeholder="Valor (ej. M)" aria-label="Valor de la opción" value="${esc(v)}">
+    <button class="btn btn-sm btn-outline-danger" type="button" aria-label="Quitar opción" title="Quitar">×</button>`;
+  div.querySelector('button').addEventListener('click', () => {
+    div.remove();
+    if (!cajaOpciones.children.length) filaOpcion();
+  });
+  cajaOpciones.appendChild(div);
+  return div;
+}
+function pintarOpciones(lista) {
+  cajaOpciones.innerHTML = '';
+  (lista && lista.length ? lista : [{n:'', v:''}]).forEach(o => filaOpcion(o.n, o.v));
+}
+document.getElementById('btnAddOpcion').addEventListener('click', () => {
+  filaOpcion().querySelector('input').focus();
+});
+document.getElementById('btnVariantReset').addEventListener('click', () => {
+  document.getElementById('formVariant').reset();
+  document.getElementById('variant_action').value = 'add_variant';
+  document.getElementById('variant_id').value = '';
+  document.getElementById('btnVariantSubmit').textContent = 'Añadir variante';
+  pintarOpciones([]);
+});
 
 // Variantes (abrir modal)
 let variantsModal = document.getElementById('modalVariants');
@@ -722,6 +786,11 @@ variantsModal.addEventListener('show.bs.modal', function (ev) {
   document.getElementById('btnVariantSubmit').textContent = 'Añadir variante';
   document.getElementById('variant_id').value = '';
   document.getElementById('v_active').value = '1';
+  // Una variante nueva arranca con los mismos NOMBRES de opción que la última
+  // (sin valores): al cargar Talla × Color no hay que reescribirlos.
+  const previas = (VARIANTS[pid] || []);
+  const molde = previas.length ? (previas[previas.length - 1].opts || []).map(o => ({n: o.n, v: ''})) : [];
+  pintarOpciones(molde);
 
   const tbody = document.querySelector('#tblVariants tbody');
   tbody.innerHTML = '';
@@ -729,10 +798,9 @@ variantsModal.addEventListener('show.bs.modal', function (ev) {
     const tr = document.createElement('tr');
     tr.innerHTML = `
   <td>${v.id}</td>
-  <td>${(v.option1_name||'')}: <strong>${(v.option1_value||'')}</strong></td>
-  <td>${(v.option2_name||'')}: <strong>${(v.option2_value||'')}</strong></td>
-  <td>${v.sku||'—'}</td>
-  <td class="text-end">${parseInt(v.stock||0,10)}</td>
+  <td>${(v.opts||[]).length ? v.opts.map(o => `${esc(o.n)}: <strong>${esc(o.v)}</strong>`).join('<br>') : '<span class="text-muted">—</span>'}</td>
+  <td>${esc(v.sku||'—')}</td>
+  <td class="text-end">${parseInt(v.stock||0,10)}${v.apartadas ? `<div class="small text-warning-emphasis">+${parseInt(v.apartadas,10)} apartadas</div>` : ''}</td>
   <td class="text-end">${v.price !== null ? '$'+Number(v.price).toLocaleString('es-CO') : '—'}</td>
   <td>${(parseInt(v.active,10) ? 'Sí' : 'No')}</td>
   <td class="text-end">
@@ -761,10 +829,7 @@ function editVariant(pid, vid) {
   document.getElementById('variant_id').value = v.id;
   document.getElementById('variant_product_id').value = pid;
 
-  document.getElementById('v_o1n').value = v.option1_name || '';
-  document.getElementById('v_o1v').value = v.option1_value || '';
-  document.getElementById('v_o2n').value = v.option2_name || '';
-  document.getElementById('v_o2v').value = v.option2_value || '';
+  pintarOpciones(v.opts || []);
   document.getElementById('v_sku').value = v.sku || '';
   document.getElementById('v_stock').value = parseInt(v.stock||0,10);
   document.getElementById('v_price').value = (v.price !== null && v.price !== undefined) ? v.price : '';

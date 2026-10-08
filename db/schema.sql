@@ -96,6 +96,55 @@ CREATE TABLE IF NOT EXISTS `product_variants` (
       REFERENCES `products` (`id`) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+-- ---------- Opciones de variante 3 en adelante ----------
+-- Las opciones 1 y 2 viven en product_variants.option1_*/option2_*; de la
+-- tercera en adelante (Manga, Material, Género…) van aquí, una fila por opción.
+CREATE TABLE IF NOT EXISTS `product_variant_options` (
+  `id`         INT UNSIGNED NOT NULL AUTO_INCREMENT,
+  `variant_id` INT UNSIGNED NOT NULL,
+  `position`   TINYINT UNSIGNED NOT NULL,        -- 3, 4, 5…
+  `name`       VARCHAR(60)  NOT NULL,
+  `value`      VARCHAR(120) NOT NULL,
+  PRIMARY KEY (`id`),
+  KEY `ix_vopt_variant` (`variant_id`, `position`),
+  KEY `ix_vopt_name_value` (`name`, `value`),
+  CONSTRAINT `fk_vopt_variant` FOREIGN KEY (`variant_id`)
+      REFERENCES `product_variants` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- ---------- Carritos reservados (en espera) ----------
+-- Reservar APARTA stock (se descuenta al reservar); retomar o liberar lo
+-- devuelve. `held` dice si esa línea apartó stock de verdad.
+CREATE TABLE IF NOT EXISTS `saved_carts` (
+  `id`         INT UNSIGNED NOT NULL AUTO_INCREMENT,
+  `label`      VARCHAR(120) NOT NULL,              -- nombre o seña del cliente
+  `user_id`    INT UNSIGNED DEFAULT NULL,          -- id SSO de quien reservó (sin FK, ver orders)
+  `units`      INT          NOT NULL DEFAULT 0,
+  `total`      DECIMAL(12,2) NOT NULL DEFAULT 0.00,
+  `created_at` TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  KEY `ix_scarts_created` (`created_at`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS `saved_cart_items` (
+  `id`            INT UNSIGNED NOT NULL AUTO_INCREMENT,
+  `cart_id`       INT UNSIGNED NOT NULL,
+  `product_id`    INT UNSIGNED NOT NULL,
+  `variant_id`    INT UNSIGNED DEFAULT NULL,
+  `name`          VARCHAR(180) NOT NULL,
+  `variant_label` VARCHAR(255) DEFAULT NULL,
+  `sku`           VARCHAR(80)  DEFAULT NULL,
+  `image`         VARCHAR(255) DEFAULT NULL,
+  `unit_price`    DECIMAL(12,2) NOT NULL DEFAULT 0.00,
+  `quantity`      INT          NOT NULL DEFAULT 1,
+  `held`          TINYINT(1)   NOT NULL DEFAULT 0,
+  PRIMARY KEY (`id`),
+  KEY `ix_sitems_cart` (`cart_id`),
+  KEY `ix_sitems_variant` (`variant_id`),
+  CONSTRAINT `fk_sitems_cart` FOREIGN KEY (`cart_id`)
+      REFERENCES `saved_carts` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
 -- ---------- Órdenes / ventas ----------
 CREATE TABLE IF NOT EXISTS `orders` (
   `id`               INT UNSIGNED NOT NULL AUTO_INCREMENT,

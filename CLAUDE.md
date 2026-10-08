@@ -31,7 +31,8 @@ que probar; el acceso real se hace entrando desde el Panel General.
 `config/config.example.php` y rellenar solo las credenciales de BD (ya no hay `app_key`).
 
 El esquema está en **`db/schema.sql`** (reconstruido del código, para instalación
-limpia): `categories`, `products`, `product_variants`, `orders`, `order_items`, y
+limpia): `categories`, `products`, `product_variants`, `product_variant_options`, `orders`,
+`order_items`, `saved_carts`, `saved_cart_items`, y
 `usuarios` (espejo de solo-lectura de los usuarios del SSO, ver abajo).
 Cargar dentro de la BD de la app: `sudo mysql c0rp0tur1sm0_store < db/schema.sql`.
 
@@ -158,6 +159,23 @@ de asumirla, o romperás instalaciones con esquema distinto.
    desde `admin_sales.php`: el stock NO se devuelve, pero sale de los totales.
 6. `admin_sales_report.php` consolida: **excluye anuladas y obsequios de los totales** (obsequios en tarjeta aparte) pero las
    incluye en el listado de órdenes.
+
+### Opciones de variante (sin límite) — `lib/variantes.php`
+Las opciones **1 y 2** siguen en `product_variants.option1_*/option2_*`; de la **3 en
+adelante** van en `product_variant_options (variant_id, position, name, value)`. Cada
+posición tiene una sola fuente. Para leer TODAS usar `variantes_opciones($pdo, $filas)`
+y para la etiqueta `variante_etiqueta()`; no leer option1/option2 a mano en código
+nuevo. El formulario manda `opt_name[]`/`opt_value[]`. El catálogo arma una dimensión
+por **nombre** de opción y, si una combinación no existe, salta a la variante más
+parecida. (`product.php`/`views/pages/product.php` es una vista huérfana que solo ve 1-2.)
+
+### Carritos reservados (en espera) — `lib/reservas.php`
+`cart.php` acciones `reserve` / `resume` / `discard`. Reservar **aparta stock** (lo
+descuenta, con `FOR UPDATE`, y rechaza si no alcanza); retomar o liberar lo devuelve.
+`saved_cart_items.held` marca si esa línea apartó stock de verdad. Retomar con un
+carrito en curso lo reserva solo, todo en la misma transacción. Las reservas son
+visibles para todo el personal; la navbar muestra "N en espera" e Inventario las
+unidades "+N apartadas" (ya descontadas del stock). No hay vencimiento automático.
 
 `admin_inventory.php` (solo Admin) hace el CRUD de productos y variantes; las imágenes
 pasan por `save_uploaded_image()`, que valida JPG/PNG/WebP hasta 5 MB, las guarda en
