@@ -87,7 +87,7 @@
               </div>
               <div class="form-check">
                 <input class="form-check-input" type="radio" name="payment_method" id="pm_due" value="por_pagar" required>
-                <label class="form-check-label" for="pm_due">Por pagar</label>
+                <label class="form-check-label" for="pm_due">Fiado</label>
               </div>
             </div>
           </div>

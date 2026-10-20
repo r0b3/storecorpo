@@ -150,7 +150,8 @@ de asumirla, o romperás instalaciones con esquema distinto.
 3. `checkout.php` crea `orders` + `order_items` en una transacción y **descuenta stock**
    (`GREATEST(stock - q, 0)`) de la variante, o del producto si no hay variante.
    Estado `pending`, y pasa a `paid` automáticamente si el pago es `efectivo`.
-   Métodos válidos: `efectivo`, `transferencia`, `por_pagar`. Cliente `natural`
+   Métodos válidos: `efectivo`, `transferencia`, `por_pagar` (en pantalla se llama **"Fiado"**;
+   el valor en BD sigue siendo `por_pagar`). Cliente `natural`
    (nombre + cédula) o `empresa` (razón social + NIT).
 4. `admin_sales.php` (Admin/Billing) permite **anular**: `SELECT … FOR UPDATE`, devuelve
    el stock, marca `status='cancelled'` y registra `cancelled_at`/`cancelled_by` si esas

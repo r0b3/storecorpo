@@ -38,7 +38,7 @@ function pick(array $row, array $cands, $default=null) {
  * Se leen de GET en la vista y de POST[volver] en las acciones, para que al
  * cobrar/regalar/anular una venta se vuelva a la MISMA lista filtrada y no a
  * todas las ventas. */
-const METODOS_PAGO = ['efectivo' => 'Efectivo', 'transferencia' => 'Transferencia', 'por_pagar' => 'Por pagar'];
+const METODOS_PAGO = ['efectivo' => 'Efectivo', 'transferencia' => 'Transferencia', 'por_pagar' => 'Fiado'];   // en BD sigue siendo 'por_pagar'
 const ESTADOS_VENTA = ['pending' => 'Pendiente', 'paid' => 'Pagada', 'gift' => 'Obsequio', 'cancelled' => 'Anulada'];
 function ventas_filtros(array $src): array {
   // Solo cadenas: un ?pm[]=x llegaría como arreglo y reventaría array_key_exists.
@@ -515,7 +515,7 @@ ob_start(); ?>
   </div>
   <?php if ($pm === 'por_pagar' && $st === ''): ?>
     <div class="alert alert-light border small py-2">
-      «Por pagar» es el método con que se <strong>registró</strong> la venta; no cambia al cobrarla o regalarla.
+      «Fiado» es el método con que se <strong>registró</strong> la venta; no cambia al cobrarla o regalarla.
       Para ver solo lo que <strong>aún se debe</strong>, elige <em>Pendientes</em> arriba.
     </div>
   <?php endif; ?>
@@ -707,7 +707,7 @@ ob_start(); ?>
           <!-- Copiar resumen -->
           <button class="btn btn-outline-secondary btn-sm"
                   onclick="navigator.clipboard.writeText(this.dataset.copy);this.textContent='Copiado';setTimeout(()=>this.textContent='Copiar datos',1500)"
-                  data-copy="<?= e("Venta #{$oid} | Fecha: ".($fecha?:'—')." | Cliente: ".($empresa ?: $nombre ?: '—')." | Total: $".money($total)." | Método: {$pmeth}".($sellerName ? " | Vendedor: {$sellerName}" : "")) ?>">
+                  data-copy="<?= e("Venta #{$oid} | Fecha: ".($fecha?:'—')." | Cliente: ".($empresa ?: $nombre ?: '—')." | Total: $".money($total)." | Método: " . (METODOS_PAGO[strtolower((string)$pmeth)] ?? $pmeth) . ($sellerName ? " | Vendedor: {$sellerName}" : "")) ?>">
             Copiar datos
           </button>
 

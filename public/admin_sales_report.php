@@ -34,6 +34,10 @@ function pick_date_col(PDO $pdo, string $table): ?string {
   }
   return null;
 }
+// Etiquetas visibles del método de pago (en BD: efectivo|transferencia|por_pagar).
+const METODOS_PAGO = ['efectivo' => 'Efectivo', 'transferencia' => 'Transferencia', 'por_pagar' => 'Fiado'];
+function metodo_label($m): string { $m = strtolower((string)$m); return METODOS_PAGO[$m] ?? ucfirst($m); }
+
 // Filtros con opción de excluir lo que no es venta (por defecto true): las
 // anuladas y los obsequios. El obsequio sí sacó producto del stand, pero no
 // entró dinero: sumarlo inflaría el consolidado.
@@ -224,7 +228,7 @@ $art  = e($_GET['art']  ?? '');
     <div class="col-auto">
       <select class="form-select" name="pm">
         <option value="">Método de pago</option>
-        <?php foreach (['efectivo'=>'Efectivo','transferencia'=>'Transferencia','por_pagar'=>'Por pagar'] as $k=>$v): ?>
+        <?php foreach (METODOS_PAGO as $k=>$v): ?>
           <option value="<?= $k ?>" <?= ($pm===$k)?'selected':'' ?>><?= $v ?></option>
         <?php endforeach; ?>
       </select>
@@ -330,7 +334,7 @@ $art  = e($_GET['art']  ?? '');
               <tbody>
                 <?php foreach ($BY_PM as $r): ?>
                   <tr>
-                    <td><?= e(ucfirst($r['payment_method'])) ?></td>
+                    <td><?= e(metodo_label($r['payment_method'])) ?></td>
                     <td class="text-end"><?= (int)$r['n'] ?></td>
                     <td class="text-end">$<?= money($r['s']) ?></td>
                   </tr>
@@ -470,7 +474,7 @@ $art  = e($_GET['art']  ?? '');
                   <td>#<?= (int)($o['id'] ?? 0) ?></td>
                   <td><?= e($fecha) ?></td>
                   <td><?= e($cliente) ?></td>
-                  <td><?= e(ucfirst((string)$pmeth)) ?></td>
+                  <td><?= e(metodo_label($pmeth)) ?></td>
                   <td class="text-end">$<?= money($total) ?></td>
                   <td>
                   <?php

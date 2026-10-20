@@ -43,7 +43,7 @@ const RANGOS = [
 const METODOS = [
   'efectivo'      => 'Efectivo',
   'transferencia' => 'Transferencia',
-  'por_pagar'     => 'Por pagar',
+  'por_pagar'     => 'Fiado',
 ];
 
 $hoy   = new DateTimeImmutable('today');
