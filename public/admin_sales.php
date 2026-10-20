@@ -34,6 +34,38 @@ function pick(array $row, array $cands, $default=null) {
   }
   return $default;
 }
+/* ===== Filtros (lista blanca) =====
+ * Se leen de GET en la vista y de POST[volver] en las acciones, para que al
+ * cobrar/regalar/anular una venta se vuelva a la MISMA lista filtrada y no a
+ * todas las ventas. */
+const METODOS_PAGO = ['efectivo' => 'Efectivo', 'transferencia' => 'Transferencia', 'por_pagar' => 'Por pagar'];
+const ESTADOS_VENTA = ['pending' => 'Pendiente', 'paid' => 'Pagada', 'gift' => 'Obsequio', 'cancelled' => 'Anulada'];
+function ventas_filtros(array $src): array {
+  // Solo cadenas: un ?pm[]=x llegaría como arreglo y reventaría array_key_exists.
+  $src = array_map(fn($v) => is_string($v) ? $v : '', $src);
+  $f = [];
+  $fecha = fn($v) => preg_match('/^\d{4}-\d{2}-\d{2}$/', (string)$v) ? (string)$v : '';
+  $f['from'] = $fecha($src['from'] ?? '');
+  $f['to']   = $fecha($src['to'] ?? '');
+  $f['q']    = mb_substr(trim((string)($src['q'] ?? '')), 0, 100);
+  $f['pm']   = array_key_exists($src['pm'] ?? '', METODOS_PAGO) ? $src['pm'] : '';
+  $f['st']   = array_key_exists($src['st'] ?? '', ESTADOS_VENTA) ? $src['st'] : '';
+  $f['bt']   = in_array($src['bt'] ?? '', ['empresa', 'natural'], true) ? $src['bt'] : '';
+  $f['seller_id'] = ctype_digit((string)($src['seller_id'] ?? '')) ? (string)(int)$src['seller_id'] : '';
+  return array_filter($f, fn($v) => $v !== '');
+}
+/** Query string de los filtros vigentes (para enlaces y para volver tras un POST). */
+function ventas_qs(array $f, array $cambios = []): string {
+  $f = array_filter(array_merge($f, $cambios), fn($v) => $v !== '' && $v !== null);
+  return http_build_query($f);
+}
+/** Destino de las redirecciones de las acciones: la lista con sus filtros. */
+function ventas_volver(): string {
+  parse_str((string)($_POST['volver'] ?? ''), $prev);
+  $qs = ventas_qs(ventas_filtros($prev));
+  return 'admin_sales.php?' . ($qs !== '' ? $qs . '&' : '');
+}
+
 /** ¿El ENUM de status acepta este valor? Sin la migración, escribir 'gift'
  *  fallaría (modo estricto) o guardaría '' (no estricto): mejor avisar. */
 function status_admite(PDO $pdo, string $table, string $valor): bool {
@@ -49,12 +81,12 @@ function status_admite(PDO $pdo, string $table, string $valor): bool {
 if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST' && ($_POST['action'] ?? '') === 'save_note') {
   ensure_csrf();
   $oid = (int)($_POST['order_id'] ?? 0);
-  if ($oid <= 0) { redirect('admin_sales.php?ok=0&msg=' . urlencode('ID de venta inválido')); }
+  if ($oid <= 0) { redirect(ventas_volver() . 'ok=0&msg=' . urlencode('ID de venta inválido')); }
 
   $pdo = get_pdo();
   $ordersT = table_exists($pdo,'orders') ? 'orders' : (table_exists($pdo,'sales') ? 'sales' : null);
   if (!$ordersT || !has_column($pdo, $ordersT, 'notas')) {
-    redirect('admin_sales.php?ok=0&msg=' . urlencode('Esta instalación no tiene columna de notas.'));
+    redirect(ventas_volver() . 'ok=0&msg=' . urlencode('Esta instalación no tiene columna de notas.'));
   }
 
   try {
@@ -79,10 +111,10 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST' && ($_POST['action'] ?? '')
       if (!$chk->fetchColumn()) { throw new RuntimeException('Venta no encontrada.'); }
     }
 
-    redirect('admin_sales.php?ok=1&msg=' . urlencode($texto !== '' ? 'Observación guardada.' : 'Observación eliminada.'));
+    redirect(ventas_volver() . 'ok=1&msg=' . urlencode($texto !== '' ? 'Observación guardada.' : 'Observación eliminada.'));
   } catch (Throwable $e) {
     error_log('[save_note] ' . $e->getMessage());
-    redirect('admin_sales.php?ok=0&msg=' . urlencode($e->getMessage()));
+    redirect(ventas_volver() . 'ok=0&msg=' . urlencode($e->getMessage()));
   }
 }
 /* === /Observación ================================================== */
@@ -92,11 +124,11 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST' && ($_POST['action'] ?? '')
 if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST' && ($_POST['action'] ?? '') === 'mark_paid') {
   ensure_csrf();
   $oid = (int)($_POST['order_id'] ?? 0);
-  if ($oid <= 0) { redirect('admin_sales.php?ok=0&msg=' . urlencode('ID de venta inválido')); }
+  if ($oid <= 0) { redirect(ventas_volver() . 'ok=0&msg=' . urlencode('ID de venta inválido')); }
 
   $pdo = get_pdo();
   $ordersT = table_exists($pdo,'orders') ? 'orders' : (table_exists($pdo,'sales') ? 'sales' : null);
-  if (!$ordersT) { redirect('admin_sales.php?ok=0&msg=' . urlencode('No existe la tabla de ventas.')); }
+  if (!$ordersT) { redirect(ventas_volver() . 'ok=0&msg=' . urlencode('No existe la tabla de ventas.')); }
 
   try {
     $pdo->beginTransaction();
@@ -131,11 +163,11 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST' && ($_POST['action'] ?? '')
     $pdo->prepare("UPDATE {$ordersT} SET {$set} WHERE id = :id")->execute($params);
 
     $pdo->commit();
-    redirect('admin_sales.php?ok=1&msg=' . urlencode('Venta marcada como pagada.'));
+    redirect(ventas_volver() . 'ok=1&msg=' . urlencode('Venta marcada como pagada.'));
   } catch (Throwable $e) {
     if ($pdo->inTransaction()) $pdo->rollBack();
     error_log('[mark_paid] ' . $e->getMessage());
-    redirect('admin_sales.php?ok=0&msg=' . urlencode($e->getMessage()));
+    redirect(ventas_volver() . 'ok=0&msg=' . urlencode($e->getMessage()));
   }
 }
 /* === /Marcar como pagada =========================================== */
@@ -147,12 +179,12 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST' && ($_POST['action'] ?? '')
 if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST' && ($_POST['action'] ?? '') === 'mark_gift') {
   ensure_csrf();
   $oid = (int)($_POST['order_id'] ?? 0);
-  if ($oid <= 0) { redirect('admin_sales.php?ok=0&msg=' . urlencode('ID de venta inválido')); }
+  if ($oid <= 0) { redirect(ventas_volver() . 'ok=0&msg=' . urlencode('ID de venta inválido')); }
 
   $pdo = get_pdo();
   $ordersT = table_exists($pdo,'orders') ? 'orders' : (table_exists($pdo,'sales') ? 'sales' : null);
   if (!$ordersT || !status_admite($pdo, $ordersT, 'gift')) {
-    redirect('admin_sales.php?ok=0&msg=' . urlencode('Esta instalación no admite el estado obsequio.'));
+    redirect(ventas_volver() . 'ok=0&msg=' . urlencode('Esta instalación no admite el estado obsequio.'));
   }
 
   try {
@@ -180,11 +212,11 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST' && ($_POST['action'] ?? '')
     $pdo->prepare("UPDATE {$ordersT} SET {$set} WHERE id = :id")->execute($params);
 
     $pdo->commit();
-    redirect('admin_sales.php?ok=1&msg=' . urlencode('Venta registrada como obsequio: ya no suma en el consolidado.'));
+    redirect(ventas_volver() . 'ok=1&msg=' . urlencode('Venta registrada como obsequio: ya no suma en el consolidado.'));
   } catch (Throwable $e) {
     if ($pdo->inTransaction()) $pdo->rollBack();
     error_log('[mark_gift] ' . $e->getMessage());
-    redirect('admin_sales.php?ok=0&msg=' . urlencode($e->getMessage()));
+    redirect(ventas_volver() . 'ok=0&msg=' . urlencode($e->getMessage()));
   }
 }
 /* === /Obsequio ===================================================== */
@@ -193,12 +225,12 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST' && ($_POST['action'] ?? '')
 if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST' && ($_POST['action'] ?? '') === 'reverse') {
   ensure_csrf();
   $oid = (int)($_POST['order_id'] ?? 0);
-  if ($oid <= 0) { redirect('admin_sales.php?ok=0&msg=' . urlencode('ID de venta inválido')); }
+  if ($oid <= 0) { redirect(ventas_volver() . 'ok=0&msg=' . urlencode('ID de venta inválido')); }
 
   $pdo = get_pdo();
   $ordersT = table_exists($pdo,'orders') ? 'orders' : (table_exists($pdo,'sales') ? 'sales' : null);
   $itemsT  = table_exists($pdo,'order_items') ? 'order_items' : (table_exists($pdo,'sales_items') ? 'sales_items' : null);
-  if (!$ordersT || !$itemsT) { redirect('admin_sales.php?ok=0&msg=' . urlencode('No existen tablas de ventas/ítems.')); }
+  if (!$ordersT || !$itemsT) { redirect(ventas_volver() . 'ok=0&msg=' . urlencode('No existen tablas de ventas/ítems.')); }
 
   try {
     $pdo->beginTransaction();
@@ -211,7 +243,7 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST' && ($_POST['action'] ?? '')
 
     if (strtolower((string)$order['status']) === 'cancelled') {
       $pdo->rollBack();
-      redirect('admin_sales.php?ok=0&msg=' . urlencode('La venta ya está anulada.'));
+      redirect(ventas_volver() . 'ok=0&msg=' . urlencode('La venta ya está anulada.'));
     }
 
     // Carga ítems
@@ -257,11 +289,11 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST' && ($_POST['action'] ?? '')
     $pdo->prepare("UPDATE {$ordersT} SET {$set} WHERE id = :id")->execute($params);
 
     $pdo->commit();
-    redirect('admin_sales.php?ok=1&msg=' . urlencode('Venta anulada y stock restituido.'));
+    redirect(ventas_volver() . 'ok=1&msg=' . urlencode('Venta anulada y stock restituido.'));
   } catch (Throwable $e) {
     if ($pdo->inTransaction()) $pdo->rollBack();
     error_log('[reverse order] ' . $e->getMessage());
-    redirect('admin_sales.php?ok=0&msg=' . urlencode('No se pudo anular: ' . $e->getMessage()));
+    redirect(ventas_volver() . 'ok=0&msg=' . urlencode('No se pudo anular: ' . $e->getMessage()));
   }
 }
 /* === /Reversión de venta =========================================== */
@@ -291,12 +323,15 @@ foreach (['order_id','sale_id','sales_id','orders_id'] as $c) {
 $hasUserId = in_array('user_id', $ocols, true) || in_array('user_id', array_map('strtolower',$ocols), true);
 
 /* ===== Filtros ===== */
-$from     = trim($_GET['from'] ?? '');
-$to       = trim($_GET['to']   ?? '');
-$pm       = trim($_GET['pm']   ?? ''); // método de pago
-$bt       = trim($_GET['bt']   ?? ''); // tipo de cliente
-$q        = trim($_GET['q']    ?? ''); // texto libre
-$sellerId = isset($_GET['seller_id']) && $_GET['seller_id'] !== '' ? (int)$_GET['seller_id'] : null;
+$F        = ventas_filtros($_GET);
+$from     = $F['from'] ?? '';
+$to       = $F['to']   ?? '';
+$pm       = $F['pm']   ?? ''; // método elegido AL VENDER (no cambia al cobrar)
+$st       = $F['st']   ?? ''; // estado actual: pendiente, pagada, obsequio, anulada
+$bt       = $F['bt']   ?? ''; // tipo de cliente
+$q        = $F['q']    ?? ''; // texto libre
+$sellerId = isset($F['seller_id']) ? (int)$F['seller_id'] : null;
+$volver   = ventas_qs($F);    // viaja en cada formulario de acción
 
 /* ===== Query de órdenes (JOIN al espejo `usuarios` del SSO) ===== */
 // `usuarios` es solo un espejo para resolver nombres; user_id guarda el id SSO.
@@ -338,12 +373,29 @@ if ($q !== '') {
   if ($ors) $sql .= " AND (".implode(" OR ", $ors).")";
 }
 
+// Conteo por estado con TODOS los filtros salvo el de estado: alimenta las
+// pastillas "Pendientes 2 · Pagadas 58…", que dicen qué hay antes de elegir.
+$conteoEstados = [];
+if (in_array('status', $ocols, true)) {
+  $sqlCont = preg_replace('/^SELECT .*? FROM /s', 'SELECT o.status AS s, COUNT(*) AS n, COALESCE(SUM(o.total),0) AS t FROM ', $sql, 1)
+           . " GROUP BY o.status";
+  $stc = $pdo->prepare($sqlCont);
+  $stc->execute($params);
+  foreach ($stc->fetchAll(PDO::FETCH_ASSOC) as $r) { $conteoEstados[strtolower((string)$r['s'])] = $r; }
+  // El estado se aplica DESPUÉS del conteo, para que las demás pastillas
+  // sigan mostrando su número aunque haya uno elegido.
+  if ($st !== '') { $sql .= " AND o.status = :st"; $params[':st'] = $st; }
+}
+
 $sql .= $dateCol ? " ORDER BY o.{$dateCol} DESC" : " ORDER BY o.id DESC";
-$sql .= " LIMIT 300";
+$limite = 300;
+$sql .= " LIMIT " . ($limite + 1);   // uno de más: así se sabe si hubo recorte
 
 $stmt = $pdo->prepare($sql);
 $stmt->execute($params);
 $orders = $stmt->fetchAll(PDO::FETCH_ASSOC);
+$recortado = count($orders) > $limite;
+if ($recortado) { array_pop($orders); }
 
 /* ===== Carga items por orden ===== */
 $itemsByOrder = [];
@@ -376,50 +428,98 @@ if ($hasUserId && table_exists($pdo, 'usuarios')) {
 
 /* ===== Render ===== */
 ob_start(); ?>
-<div class="d-flex align-items-center justify-content-between mb-3">
-  <h4 class="mb-0">Ventas</h4>
+<h4 class="mb-3">Ventas</h4>
 
-  <form class="row g-2" method="get" action="<?= url('admin_sales.php') ?>">
-    <div class="col-auto">
-      <input type="date" class="form-control" name="from" value="<?= e($from) ?>" placeholder="Desde">
-    </div>
-    <div class="col-auto">
-      <input type="date" class="form-control" name="to" value="<?= e($to) ?>" placeholder="Hasta">
-    </div>
-    <div class="col-auto">
-      <input type="text" class="form-control" name="q" value="<?= e($q) ?>" placeholder="Buscar nombre, empresa, NIT, cédula, email...">
-    </div>
-    <div class="col-auto">
-      <select class="form-select" name="pm">
-        <option value="">Método de pago</option>
-        <?php foreach (['Efectivo'=>'efectivo','Transferencia'=>'transferencia','Por pagar'=>'por_pagar'] as $txt=>$val): ?>
-          <option value="<?= e($val) ?>" <?= $pm===$val?'selected':'' ?>><?= e($txt) ?></option>
-        <?php endforeach; ?>
-      </select>
-    </div>
-    <div class="col-auto">
-      <select class="form-select" name="bt">
-        <option value="">Tipo de cliente</option>
-        <?php foreach (['Empresa'=>'empresa','Natural'=>'natural'] as $txt=>$val): ?>
-          <option value="<?= e($val) ?>" <?= $bt===$val?'selected':'' ?>><?= e($txt) ?></option>
-        <?php endforeach; ?>
-      </select>
-    </div>
-    <?php if ($sellers): ?>
-      <div class="col-auto">
-        <select class="form-select" name="seller_id">
-          <option value="">Vendedor</option>
-          <?php foreach ($sellers as $s): ?>
-            <option value="<?= (int)$s['id'] ?>" <?= $sellerId===(int)$s['id']?'selected':'' ?>><?= e($s['label']) ?></option>
+<form class="card mb-3" method="get" action="<?= url('admin_sales.php') ?>">
+  <div class="card-body py-2">
+    <div class="row g-2 align-items-end">
+      <div class="col-6 col-md-3 col-xl-2">
+        <label class="form-label small mb-0" for="f_from">Desde</label>
+        <input type="date" class="form-control form-control-sm" id="f_from" name="from" value="<?= e($from) ?>">
+      </div>
+      <div class="col-6 col-md-3 col-xl-2">
+        <label class="form-label small mb-0" for="f_to">Hasta</label>
+        <input type="date" class="form-control form-control-sm" id="f_to" name="to" value="<?= e($to) ?>">
+      </div>
+      <div class="col-12 col-md-6 col-xl-3">
+        <label class="form-label small mb-0" for="f_q">Cliente</label>
+        <input type="text" class="form-control form-control-sm" id="f_q" name="q" value="<?= e($q) ?>" placeholder="Nombre, empresa, NIT, cédula, email…">
+      </div>
+      <div class="col-6 col-md-3 col-xl">
+        <label class="form-label small mb-0" for="f_st">Estado</label>
+        <select class="form-select form-select-sm" id="f_st" name="st">
+          <option value="">Todos</option>
+          <?php foreach (ESTADOS_VENTA as $val => $txt): ?>
+            <option value="<?= e($val) ?>" <?= $st===$val?'selected':'' ?>><?= e($txt) ?></option>
           <?php endforeach; ?>
         </select>
       </div>
-    <?php endif; ?>
-    <div class="col-auto">
-      <button class="btn btn-primary" type="submit">Filtrar</button>
+      <div class="col-6 col-md-3 col-xl">
+        <label class="form-label small mb-0" for="f_pm" title="El método que se eligió al registrar la venta">Método al vender</label>
+        <select class="form-select form-select-sm" id="f_pm" name="pm">
+          <option value="">Todos</option>
+          <?php foreach (METODOS_PAGO as $val => $txt): ?>
+            <option value="<?= e($val) ?>" <?= $pm===$val?'selected':'' ?>><?= e($txt) ?></option>
+          <?php endforeach; ?>
+        </select>
+      </div>
+      <div class="col-6 col-md-3 col-xl">
+        <label class="form-label small mb-0" for="f_bt">Cliente</label>
+        <select class="form-select form-select-sm" id="f_bt" name="bt">
+          <option value="">Todos</option>
+          <?php foreach (['empresa'=>'Empresa','natural'=>'Natural'] as $val=>$txt): ?>
+            <option value="<?= e($val) ?>" <?= $bt===$val?'selected':'' ?>><?= e($txt) ?></option>
+          <?php endforeach; ?>
+        </select>
+      </div>
+      <?php if ($sellers): ?>
+        <div class="col-6 col-md-3 col-xl">
+          <label class="form-label small mb-0" for="f_sel">Vendedor</label>
+          <select class="form-select form-select-sm" id="f_sel" name="seller_id">
+            <option value="">Todos</option>
+            <?php foreach ($sellers as $s): ?>
+              <option value="<?= (int)$s['id'] ?>" <?= $sellerId===(int)$s['id']?'selected':'' ?>><?= e($s['label']) ?></option>
+            <?php endforeach; ?>
+          </select>
+        </div>
+      <?php endif; ?>
+      <div class="col-12 col-xl-auto d-flex gap-2 justify-content-end">
+        <button class="btn btn-primary btn-sm" type="submit">Filtrar</button>
+        <?php if ($F): ?>
+          <a class="btn btn-outline-secondary btn-sm" href="<?= url('admin_sales.php') ?>">Limpiar</a>
+        <?php endif; ?>
+      </div>
     </div>
-  </form>
-</div>
+  </div>
+</form>
+
+<?php if ($conteoEstados):
+  // Pastillas por estado: un toque filtra; tocar la activa la quita.
+  $totalTodas = array_sum(array_map(fn($r) => (int)$r['n'], $conteoEstados));
+?>
+  <div class="d-flex flex-wrap gap-2 mb-3" role="group" aria-label="Filtrar por estado">
+    <a class="btn btn-sm <?= $st==='' ? 'btn-dark' : 'btn-outline-secondary' ?>"
+       href="<?= e(url('admin_sales.php') . '?' . ventas_qs($F, ['st' => ''])) ?>">Todas <span class="badge text-bg-light"><?= $totalTodas ?></span></a>
+    <?php foreach (ESTADOS_VENTA as $val => $txt):
+      $n = (int)($conteoEstados[$val]['n'] ?? 0);
+      if ($n === 0 && $st !== $val) continue;
+      $on = $st === $val;
+    ?>
+      <a class="btn btn-sm <?= $on ? 'btn-dark' : 'btn-outline-secondary' ?>"
+         href="<?= e(url('admin_sales.php') . '?' . ventas_qs($F, ['st' => $on ? '' : $val])) ?>">
+        <?= e($txt) ?><?= $n === 1 ? '' : 's' ?>
+        <span class="badge text-bg-light"><?= $n ?></span>
+        <span class="small opacity-75">$<?= money($conteoEstados[$val]['t'] ?? 0) ?></span>
+      </a>
+    <?php endforeach; ?>
+  </div>
+  <?php if ($pm === 'por_pagar' && $st === ''): ?>
+    <div class="alert alert-light border small py-2">
+      «Por pagar» es el método con que se <strong>registró</strong> la venta; no cambia al cobrarla o regalarla.
+      Para ver solo lo que <strong>aún se debe</strong>, elige <em>Pendientes</em> arriba.
+    </div>
+  <?php endif; ?>
+<?php endif; ?>
 
 <?php if (isset($_GET['msg'])): 
   $ok = ($_GET['ok'] ?? '') === '1'; ?>
@@ -432,6 +532,9 @@ ob_start(); ?>
 <?php if (!$orders): ?>
   <div class="alert alert-info">No hay ventas que coincidan con el filtro.</div>
 <?php else: ?>
+  <?php if ($recortado): ?>
+    <div class="alert alert-warning small py-2">Se muestran las <?= $limite ?> ventas más recientes; acota con fechas para ver las anteriores.</div>
+  <?php endif; ?>
   <div class="row row-cols-1 g-3">
     <?php foreach ($orders as $o):
       $oid    = $o['id'] ?? null;
@@ -502,7 +605,7 @@ ob_start(); ?>
 ?>
 <div>
   <span class="badge <?= $statusBadge ?> me-2"><?= e($statusLabel) ?></span>
-  <span class="badge text-bg-secondary me-2"><?= e(ucfirst((string)$pmeth)) ?></span>
+  <span class="badge text-bg-secondary me-2" title="Método al vender"><?= e(METODOS_PAGO[strtolower((string)$pmeth)] ?? ucfirst((string)$pmeth)) ?></span>
   <?php if ($ctype): ?>
     <span class="badge text-bg-info"><?= e(ucfirst((string)$ctype)) ?></span>
   <?php endif; ?>
@@ -629,6 +732,7 @@ ob_start(); ?>
                   onsubmit="return confirm('¿Seguro que deseas ANULAR esta venta y devolver el stock?');">
               <?= csrf_field() ?>
               <input type="hidden" name="action" value="reverse">
+              <input type="hidden" name="volver" value="<?= e($volver) ?>">
               <input type="hidden" name="order_id" value="<?= (int)$oid ?>">
               <button class="btn btn-outline-danger btn-sm" type="submit">Anular venta</button>
             </form>
@@ -642,6 +746,7 @@ ob_start(); ?>
               <form method="post" action="<?= url('admin_sales.php') ?>" class="border rounded p-2">
                 <?= csrf_field() ?>
                 <input type="hidden" name="action" value="mark_paid">
+              <input type="hidden" name="volver" value="<?= e($volver) ?>">
                 <input type="hidden" name="order_id" value="<?= (int)$oid ?>">
                 <label class="form-label small mb-1">
                   N.° de comprobante <span class="text-muted">(opcional)</span>
@@ -660,6 +765,7 @@ ob_start(); ?>
                     onsubmit="return confirm('¿Registrar esta venta como OBSEQUIO? Dejará de sumar en el consolidado; el stock sigue descontado.');">
                 <?= csrf_field() ?>
                 <input type="hidden" name="action" value="mark_gift">
+              <input type="hidden" name="volver" value="<?= e($volver) ?>">
                 <input type="hidden" name="order_id" value="<?= (int)$oid ?>">
                 <label class="form-label small mb-1">
                   Motivo o beneficiario <span class="text-muted">(opcional)</span>
@@ -678,6 +784,7 @@ ob_start(); ?>
             <form method="post" action="<?= url('admin_sales.php') ?>" class="border rounded p-2">
               <?= csrf_field() ?>
               <input type="hidden" name="action" value="save_note">
+              <input type="hidden" name="volver" value="<?= e($volver) ?>">
               <input type="hidden" name="order_id" value="<?= (int)$oid ?>">
               <label class="form-label small mb-1">
                 Observación <span class="text-muted">(vaciar el campo la elimina)</span>
