@@ -161,6 +161,13 @@ de asumirla, o romperás instalaciones con esquema distinto.
 6. `admin_sales_report.php` consolida: **excluye anuladas y obsequios de los totales** (obsequios en tarjeta aparte) pero las
    incluye en el listado de órdenes.
 
+### Exportar a Excel — `lib/xlsx.php`, `lib/ventas_export.php`
+`admin_sales.php?exportar=xlsx` usa los mismos filtros y roles de la vista, sin el tope de
+300, y descarga un `.xlsx` real con hojas Ventas, Detalle y Resumen (Resumen usa el criterio
+del Consolidado). No hay Composer: `lib/xlsx.php` escribe el zip con `ZipArchive` (requiere
+la extensión `zip`). Los textos van como `inlineStr`, así "=1+1" no se ejecuta y las cédulas
+y comprobantes conservan sus ceros. Tras tocarlo, validar abriéndolo en Excel de verdad.
+
 ### Opciones de variante (sin límite) — `lib/variantes.php`
 Las opciones **1 y 2** siguen en `product_variants.option1_*/option2_*`; de la **3 en
 adelante** van en `product_variant_options (variant_id, position, name, value)`. Cada

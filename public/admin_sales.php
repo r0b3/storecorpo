@@ -388,13 +388,15 @@ if (in_array('status', $ocols, true)) {
 }
 
 $sql .= $dateCol ? " ORDER BY o.{$dateCol} DESC" : " ORDER BY o.id DESC";
+// El Excel lleva TODO lo filtrado; el tope de 300 es solo para no alargar la página.
+$exportar = ($_GET['exportar'] ?? '') === 'xlsx';
 $limite = 300;
-$sql .= " LIMIT " . ($limite + 1);   // uno de más: así se sabe si hubo recorte
+if (!$exportar) { $sql .= " LIMIT " . ($limite + 1); }   // uno de más: así se sabe si hubo recorte
 
 $stmt = $pdo->prepare($sql);
 $stmt->execute($params);
 $orders = $stmt->fetchAll(PDO::FETCH_ASSOC);
-$recortado = count($orders) > $limite;
+$recortado = !$exportar && count($orders) > $limite;
 if ($recortado) { array_pop($orders); }
 
 /* ===== Carga items por orden ===== */
@@ -424,6 +426,18 @@ if ($hasUserId && table_exists($pdo, 'usuarios')) {
   . " NULLIF(nombre_usuario,''), CONCAT('Usuario #', id)) AS label"
   . " FROM usuarios ORDER BY label"
   )->fetchAll(PDO::FETCH_ASSOC);
+}
+
+/* ===== Exportar a Excel (mismos filtros de la vista) ===== */
+if ($exportar) {
+  try {
+    require_once __DIR__ . '/../lib/ventas_export.php';
+    ventas_descargar_xlsx(ventas_hojas($orders, $itemsByOrder, $dateCol, $F, $sellers));
+  } catch (Throwable $e) {
+    error_log('[exportar ventas] ' . $e->getMessage());
+    $qs = ventas_qs($F);
+    redirect('admin_sales.php?' . ($qs !== '' ? $qs . '&' : '') . 'ok=0&msg=' . urlencode('No se pudo generar el Excel.'));
+  }
 }
 
 /* ===== Render ===== */
@@ -487,6 +501,10 @@ ob_start(); ?>
         <button class="btn btn-primary btn-sm" type="submit">Filtrar</button>
         <?php if ($F): ?>
           <a class="btn btn-outline-secondary btn-sm" href="<?= url('admin_sales.php') ?>">Limpiar</a>
+        <?php endif; ?>
+        <?php if ($orders): ?>
+          <a class="btn btn-success btn-sm text-nowrap" title="Descarga todas las ventas del filtro actual"
+             href="<?= e(url('admin_sales.php') . '?' . ventas_qs($F, ['exportar' => 'xlsx'])) ?>">Exportar a Excel</a>
         <?php endif; ?>
       </div>
     </div>
